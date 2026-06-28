@@ -29,7 +29,7 @@ graph TD
     GenHyp --> AdvB_Research[Advocate B Research]
     
     AdvA_Research --> AdvA_Hyp[Propose Hypothesis A]
-    AdvB_Research --> AdvB_Hyp[Propose Hypothesis B (Opposing)]
+    AdvB_Research --> AdvB_Hyp["Propose Hypothesis B (Opposing)"]
     
     subgraph DebateLoop["Debate Loop (Max 4 Rounds)"]
         AdvA_Turn[Advocate A Turn] --> GuardA{Grounding Guardrail}

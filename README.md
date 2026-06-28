@@ -31,7 +31,7 @@ graph TD
     AdvA_Research --> AdvA_Hyp[Propose Hypothesis A]
     AdvB_Research --> AdvB_Hyp[Propose Hypothesis B (Opposing)]
     
-    subgraph Debate Loop (Max 4 Rounds)
+    subgraph DebateLoop["Debate Loop (Max 4 Rounds)"]
         AdvA_Turn[Advocate A Turn] --> GuardA{Grounding Guardrail}
         GuardA -- Fails --> RetryA[Self-Correction Feedback Loop]
         RetryA --> AdvA_Turn

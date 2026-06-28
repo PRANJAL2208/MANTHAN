@@ -48,35 +48,7 @@ This is adversarial debate as a framework for **honest scientific uncertainty ma
 
 ## 📐 Agent Architecture
 
-```mermaid
-flowchart TD
-    A([🧑 User Topic]) --> B[🧬 Hypotheses Generation]
-
-    B --> C[🔍 Advocate A — Research]
-    B --> D[🔍 Advocate B — Research]
-
-    C --> E[💡 Propose Hypothesis A]
-    D --> F["💡 Propose Hypothesis B (Opposing)"]
-
-    E --> G
-    F --> G
-
-    subgraph G["🔄 Debate Loop — up to 4 Rounds"]
-        direction TB
-        G1[🗣️ Advocate A Turn] --> G2{🛡️ Guardrail Check}
-        G2 -->|Fails| G3[🔁 Self-Correction Retry]
-        G3 --> G1
-        G2 -->|Passes| G4[🗣️ Advocate B Turn]
-        G4 --> G5{🛡️ Guardrail Check}
-        G5 -->|Fails| G6[🔁 Self-Correction Retry]
-        G6 --> G4
-        G5 -->|Passes| G7[⚖️ Judge Round Review]
-        G7 --> G8{🛑 Verdict Ready?}
-        G8 -->|No — continue| G1
-    end
-
-    G8 -->|Yes or Max Rounds| H[🏆 Decisive Judge Verdict]
-```
+![Agent Architecture](docs/architecture.png)
 
 ---
 

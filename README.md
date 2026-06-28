@@ -1,115 +1,189 @@
-# Scientific Hypothesis Debate Agent
+<h1 align="center">⚗️ MANTHAN — Scientific Hypothesis Debate Agent</h1>
 
-A multi-agent adversarial debate system that takes an open scientific topic, dynamically researches the literature, generates opposing hypotheses, advocates for each hypothesis in a structured debate using **real, retrieved scientific papers**, cross-examines the opponent's evidence, and outputs a structured scientific verdict from a neutral Judge.
+<p align="center">
+  <em>An adversarial multi-agent debate system that forces AI to argue both sides of science — with real papers.</em>
+</p>
 
-Built for the **AI Agents: Intensive Vibe Coding Capstone**.
+<p align="center">
+  <img src="https://img.shields.io/badge/Python-3.10+-3776AB?style=for-the-badge&logo=python&logoColor=white"/>
+  <img src="https://img.shields.io/badge/Streamlit-FF4B4B?style=for-the-badge&logo=streamlit&logoColor=white"/>
+  <img src="https://img.shields.io/badge/Gemini-8E75B2?style=for-the-badge&logo=google&logoColor=white"/>
+  <img src="https://img.shields.io/badge/Anthropic-191919?style=for-the-badge&logo=anthropic&logoColor=white"/>
+  <img src="https://img.shields.io/badge/MCP-Protocol-00C7B7?style=for-the-badge"/>
+  <img src="https://img.shields.io/badge/Tests-Mocked%20%26%20Offline-brightgreen?style=for-the-badge&logo=pytest"/>
+</p>
+
+<p align="center">
+  Built for the <strong>AI Agents: Intensive Vibe Coding Capstone</strong>
+</p>
 
 ---
 
-## 🔬 The Solution & Value
+## 🧠 What is MANTHAN?
 
-AI agents that provide a single, confident answer to unresolved questions can be misleading or hallucinate assertions. This project implements **adversarial multi-agent debate** as a framework for honest scientific uncertainty mapping, inspired by AI safety research (using debate between agents to help humans evaluate complex claims). 
+> **"The truth emerges from collision, not consensus."**
 
-### Key Architectural Enhancements
-1. **Dynamic Opposite Hypothesis Formulation**: The system starts with just a topic. Advocates perform initial research and formulate competing, distinct stances.
-2. **Active Self-Correction (Hallucination Prevention)**: Programmatic guardrails run on each turn. If a claim lacks abstract word overlap or references invalid indexes, the turn is rejected, and the Advocate is prompted to rewrite it using detailed feedback (up to 2 retries).
-3. **Interactive Intermission & Coroutines**: The debate dynamically pauses after Round 1. The user acts as the Judge's assistant to select or type a directive (e.g. animal translation limits), which is injected into the generator via `.send()`. Advocates address this challenge directly in Round 2.
-4. **Cinematic Typewriter Streaming & Tug-of-War**: Debate turns type out in real-time. A live Dominance Tug-of-War Bar shifts dynamically based on Advocates' grounding audit performances.
-5. **Decisive Dynamic Stop Judge**: The Judge reviews the debate round-by-round and dynamically halts the debate when a clear verdict can be made, avoiding lazy "both are correct" summaries unless explicitly backed by different contexts (e.g. species translation).
-6. **Request Latency Caching**: A local SQLite cache layer caches Semantic Scholar API queries, ensuring fast, rate-limit-resistant performance.
+AI systems that give a single confident answer to unresolved scientific questions are dangerous — they hallucinate, they oversimplify, and they mislead. **MANTHAN** takes a different approach:
+
+Given any open scientific topic, it spawns **two adversarial AI Advocates** that independently research the literature, formulate competing hypotheses, debate each other across multiple rounds using **real, retrieved papers**, and submit to a **neutral Judge** who delivers a decisive, evidence-backed verdict.
+
+This is adversarial debate as a framework for **honest scientific uncertainty mapping** — inspired by AI safety research on debate as an alignment technique.
+
+---
+
+## ✨ Key Features
+
+| Feature | Description |
+|---|---|
+| 🔬 **Dynamic Hypothesis Formulation** | Both Advocates independently research the topic and propose distinct, competing scientific stances |
+| 🛡️ **Hallucination Guardrails** | Every claim is programmatically verified against paper abstracts. Failed turns trigger a self-correction feedback loop (up to 2 retries) |
+| ⏸️ **Interactive Intermission** | Debate pauses after Round 1 — the user injects a real challenge directive via Python coroutine `.send()` |
+| 🎬 **Cinematic Typewriter Streaming** | All debate turns stream word-by-word with a live **Tug-of-War Dominance Bar** |
+| ⚖️ **Decisive Dynamic Judge** | The Judge halts the debate the moment a verdict is clear — no lazy "both sides have merit" summaries |
+| ⚡ **SQLite Request Caching** | All Semantic Scholar API queries are cached locally — fast, rate-limit-resistant, and fully offline-repeatable |
+| 🔌 **MCP Tool Exposure** | Literature search is wrapped as a reusable Model Context Protocol tool |
+| 🔄 **Swappable LLM Backends** | Switch between Gemini and Anthropic via a single `.env` variable |
 
 ---
 
 ## 📐 Agent Architecture
 
 ```mermaid
-graph TD
-    User([User Topic]) --> GenHyp[Hypotheses Generation]
-    GenHyp --> AdvA_Research[Advocate A Research]
-    GenHyp --> AdvB_Research[Advocate B Research]
-    
-    AdvA_Research --> AdvA_Hyp[Propose Hypothesis A]
-    AdvB_Research --> AdvB_Hyp["Propose Hypothesis B (Opposing)"]
-    
-    subgraph DebateLoop["Debate Loop (Max 4 Rounds)"]
-        AdvA_Turn[Advocate A Turn] --> GuardA{Grounding Guardrail}
-        GuardA -- Fails --> RetryA[Self-Correction Feedback Loop]
-        RetryA --> AdvA_Turn
-        GuardA -- Passes --> AdvB_Turn[Advocate B Turn]
-        
-        AdvB_Turn --> GuardB{Grounding Guardrail}
-        GuardB -- Fails --> RetryB[Self-Correction Feedback Loop]
-        RetryB --> AdvB_Turn
-        GuardB -- Passes --> JudgeCheck[Judge Round Review]
-        
-        JudgeCheck --> StopDecision{Decide Stop?}
-        StopDecision -- No --> AdvA_Turn
+flowchart TD
+    A([🧑 User Topic]) --> B[🧬 Hypotheses Generation]
+
+    B --> C[🔍 Advocate A — Research]
+    B --> D[🔍 Advocate B — Research]
+
+    C --> E[💡 Propose Hypothesis A]
+    D --> F["💡 Propose Hypothesis B (Opposing)"]
+
+    E --> G
+    F --> G
+
+    subgraph G["🔄 Debate Loop — up to 4 Rounds"]
+        direction TB
+        G1[🗣️ Advocate A Turn] --> G2{🛡️ Guardrail Check}
+        G2 -->|Fails| G3[🔁 Self-Correction Retry]
+        G3 --> G1
+        G2 -->|Passes| G4[🗣️ Advocate B Turn]
+        G4 --> G5{🛡️ Guardrail Check}
+        G5 -->|Fails| G6[🔁 Self-Correction Retry]
+        G6 --> G4
+        G5 -->|Passes| G7[⚖️ Judge Round Review]
+        G7 --> G8{🛑 Verdict Ready?}
+        G8 -->|No — continue| G1
     end
-    
-    StopDecision -- Yes / Max Rounds --> FinalVerdict[Decisive Judge Verdict]
+
+    G8 -->|Yes or Max Rounds| H[🏆 Decisive Judge Verdict]
 ```
 
 ---
 
-## 📂 File Directory
+## 📂 Project Structure
 
-- **`agents.py`** — Advocate and Judge agent implementations (multi-agent dynamic logic)
-- **`debate_engine.py`** — Orchestrator managing dynamic loops, turn-taking, and self-correction retries
-- **`literature_search.py`** — Live Semantic Scholar API tool with exponential backoff retries and SQLite caching
-- **`guardrails.py`** — Security & quality guardrail (sentence-level abstract word overlap analysis)
-- **`mcp_server.py`** — Literature search wrapped as a reusable Model Context Protocol (MCP) tool
-- **`app.py`** — Streamlit premium dark UI
-- **`llm_client.py`** — Swappable LLM client backend (Gemini default, Anthropic fallback)
-- **`tests/test_debate_engine.py`** — Unit tests covering grounding checks, signature changes, and mock JSON-based runs
+```
+manthan/
+├── agents.py             # Advocate & Judge agent logic
+├── debate_engine.py      # Orchestrator — turn-taking, retries, coroutines
+├── literature_search.py  # Semantic Scholar API + SQLite cache
+├── guardrails.py         # Sentence-level grounding verification
+├── mcp_server.py         # Literature search as an MCP tool
+├── llm_client.py         # Swappable Gemini / Anthropic backend
+├── app.py                # Streamlit premium dark UI
+└── tests/
+    ├── test_agents.py
+    ├── test_debate_engine.py
+    ├── test_guardrails.py
+    ├── test_literature_search.py
+    ├── test_llm_client.py
+    └── test_mcp_server.py
+```
 
 ---
 
 ## 🏆 Course Concepts Demonstrated
 
-| Course Concept | Where & How |
+| Concept | Implementation |
 |---|---|
-| **Multi-agent System (ADK)** | `agents.py` + `debate_engine.py` — Dynamic collaboration between `Advocate A`, `Advocate B`, and a decisive `JudgeAgent`. |
-| **Model Context Protocol (MCP)** | `mcp_server.py` — Reusable MCP tool wrapping Semantic Scholar literature searches. |
-| **Security & Guardrails** | `guardrails.py` — Programmatic sentence-level fact-verification with self-correction retry feedback loops. |
-| **Clever Tool Use** | `literature_search.py` — Live API search with caching in local SQLite (`.search_cache.db`) and robust retry-on-failure backoff. |
-| **Swappable LLM Clients** | `llm_client.py` — Centrally manages swappable Gemini & Anthropic model configurations. |
+| 🤝 **Multi-agent System** | `agents.py` + `debate_engine.py` — Advocate A, Advocate B, and a decisive Judge collaborate dynamically |
+| 🔌 **Model Context Protocol** | `mcp_server.py` — Literature search exposed as a reusable MCP tool |
+| 🛡️ **Security & Guardrails** | `guardrails.py` — Sentence-level fact-verification with self-correction retry loops |
+| 🛠️ **Clever Tool Use** | `literature_search.py` — Live Semantic Scholar API with SQLite caching & exponential backoff |
+| 🔄 **Swappable LLM Clients** | `llm_client.py` — One `.env` variable switches between Gemini and Anthropic |
+| ⏯️ **Python Coroutines** | `debate_engine.py` — `generator.send()` injects user directives mid-debate |
 
 ---
 
 ## 🚀 Setup & Execution
 
-### 1. Installation
-Install the required dependencies inside your environment:
+### 1. Clone & Install
+
 ```bash
+git clone https://github.com/PRANJAL2208/MANTHAN.git
+cd MANTHAN
 pip install -r requirements.txt
 ```
 
-### 2. Environment Configuration
+### 2. Configure Environment
+
 Create a `.env` file in the project root:
+
 ```env
-LLM_PROVIDER=gemini          # "gemini" or "anthropic"
-GEMINI_API_KEY=your_gemini_key_here
-# ANTHROPIC_API_KEY=your_anthropic_key_here
+LLM_PROVIDER=gemini           # "gemini" or "anthropic"
+GEMINI_API_KEY=your_key_here
+# ANTHROPIC_API_KEY=your_key_here
 ```
 
-### 3. Running the Streamlit App
-Start the premium web interface:
+### 3. Run the Streamlit App
+
 ```bash
 streamlit run app.py
 ```
 
-### 4. Running the MCP Server
-Expose the literature search tools over standard MCP:
+### 4. Run the MCP Server
+
 ```bash
 python mcp_server.py
 ```
 
-### 5. Running the Test Suite
-Ensure the code passes all unit tests offline (fully mocked, no network or API keys required):
+### 5. Run the Full Test Suite *(fully offline — no API keys needed)*
+
 ```bash
-# Run the entire test suite
+# All tests
 $env:PYTHONIOENCODING="utf-8"; venv\Scripts\pytest tests/ -v
 
-# Run a specific module's test suite
-$env:PYTHONIOENCODING="utf-8"; venv\Scripts\pytest tests/test_llm_client.py -v
+# Specific module
+$env:PYTHONIOENCODING="utf-8"; venv\Scripts\pytest tests/test_guardrails.py -v
 ```
+
+---
+
+## 🧩 How a Debate Runs
+
+```
+User enters topic → "Do mitochondria influence aging?"
+
+  Advocate A researches → proposes: "Mitochondrial dysfunction drives aging"
+  Advocate B researches → proposes: "Mitochondria adapt; aging is epigenetic"
+
+  [ Round 1 ]
+    A argues with 3 cited papers → Guardrail ✅
+    B cross-examines and argues → Guardrail ✅
+    Judge reviews → "Continue — no clear winner yet"
+
+  *** INTERMISSION: User challenge injected → "Address model organism validity" ***
+
+  [ Round 2 ]
+    A addresses challenge → Guardrail ✅
+    B counters → Guardrail ❌ → Self-correction → Guardrail ✅
+    Judge reviews → "Verdict is clear — halting debate"
+
+  VERDICT: Advocate A's position is better grounded in current literature...
+```
+
+---
+
+<p align="center">
+  Made with 🔬 for the Google AI Agents Capstone
+</p>

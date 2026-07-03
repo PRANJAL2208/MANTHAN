@@ -1,5 +1,8 @@
-<h1 align="center">⚗️ MANTHAN — Scientific Hypothesis Debate Agent</h1>
+<p align="center">
+  <img src="docs/logo.png" alt="MANTHAN Logo" width="350">
+</p>
 
+<h1 align="center">⚗️ MANTHAN — Scientific Hypothesis Debate Agent</h1>
 <p align="center">
   <img src="docs/thumbnail.png" alt="MANTHAN Thumbnail" width="800">
 </p>

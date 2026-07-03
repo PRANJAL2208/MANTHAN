@@ -1,6 +1,10 @@
 <h1 align="center">⚗️ MANTHAN — Scientific Hypothesis Debate Agent</h1>
 
 <p align="center">
+  <img src="docs/thumbnail.png" alt="MANTHAN Thumbnail" width="800">
+</p>
+
+<p align="center">
   <em>An adversarial multi-agent debate system that forces AI to argue both sides of science — with real papers.</em>
 </p>
 

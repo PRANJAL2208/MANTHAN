@@ -21,19 +21,30 @@ from guardrails import check_grounding
 
 
 def parse_json_safely(text: str) -> dict:
-    """Helper to extract and parse JSON from LLM output robustly."""
+    """
+    Robustly extract and parse JSON from LLM output.
+    Handles markdown code fences (```json ... ```) and stray text around the JSON.
+    """
+    # Step 1: Strip markdown code fences that LLMs often wrap JSON in
+    text = re.sub(r'```(?:json)?\s*', '', text)
+    text = text.strip('`').strip()
+
+    # Step 2: Direct parse (works if the LLM output is clean JSON)
     try:
         return json.loads(text)
     except json.JSONDecodeError:
         pass
-    
-    # Try using regex to find JSON structures
-    match = re.search(r'\{.*\}', text, re.DOTALL)
-    if match:
+
+    # Step 3: Extract the outermost JSON object using find/rfind (more reliable
+    # than greedy regex when there are nested braces or stray text)
+    start = text.find('{')
+    end = text.rfind('}')
+    if start != -1 and end != -1 and end > start:
         try:
-            return json.loads(match.group(0))
+            return json.loads(text[start:end + 1])
         except json.JSONDecodeError:
             pass
+
     return {}
 
 
@@ -45,8 +56,10 @@ class AdvocateAgent:
 
     def propose_hypothesis(self, topic: str) -> dict:
         """Researches the topic and proposes a hypothesis with rationale."""
-        papers = search_papers(topic, limit=5)
-        self.last_papers = papers
+        # Respect pre-loaded papers (e.g. from parallel fetch in debate_engine)
+        if not self.last_papers:
+            self.last_papers = search_papers(topic, limit=5)
+        papers = self.last_papers
         evidence_block = format_papers_for_prompt(papers)
 
         system_prompt = (
@@ -67,13 +80,18 @@ class AdvocateAgent:
 
         text = call_llm(system_prompt, user_prompt, max_tokens=1000)
         result = parse_json_safely(text)
-        self.hypothesis = result.get("hypothesis", f"Conserved target regions are supported on topic {topic}.")
+        self.hypothesis = result.get(
+            "hypothesis",
+            f"The available evidence supports a primary positive effect related to: {topic}."
+        )
         return result
 
     def oppose_hypothesis(self, topic: str, opponent_hypothesis: str) -> dict:
         """Researches the topic and proposes an opposing/competing hypothesis to the opponent's."""
-        papers = search_papers(topic, limit=5)
-        self.last_papers = papers
+        # Respect pre-loaded papers (e.g. from parallel fetch in debate_engine)
+        if not self.last_papers:
+            self.last_papers = search_papers(topic, limit=5)
+        papers = self.last_papers
         evidence_block = format_papers_for_prompt(papers)
 
         system_prompt = (
@@ -97,7 +115,10 @@ class AdvocateAgent:
 
         text = call_llm(system_prompt, user_prompt, max_tokens=1000)
         result = parse_json_safely(text)
-        self.hypothesis = result.get("hypothesis", f"Variable and context-specific projections are supported on topic {topic}.")
+        self.hypothesis = result.get(
+            "hypothesis",
+            f"The available evidence supports a nuanced or skeptical interpretation of: {topic}."
+        )
         return result
 
     def _system_prompt(self) -> str:

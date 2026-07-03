@@ -19,9 +19,9 @@ import os
 import json
 from dotenv import load_dotenv
 
-load_dotenv()  # reads the .env file in the project folder and loads it into os.environ
+load_dotenv(override=True)  # reads the .env file in the project folder and loads it into os.environ
 
-LLM_PROVIDER = os.environ.get("LLM_PROVIDER", "gemini")  # "gemini" or "anthropic"
+LLM_PROVIDER = os.environ.get("LLM_PROVIDER", "gemini")  # "gemini", "anthropic", or "groq"
 
 
 import time
@@ -30,8 +30,14 @@ def call_llm(system_prompt: str, user_prompt: str, max_tokens: int = 3000) -> st
     """
     Sends a system instruction + a user message to whichever LLM provider
     is configured, and returns the plain text response.
-    Retries on rate-limit, spikes in demand, or temporary unavailable errors (429/503).
+
+    Retry policy:
+    - Per-minute rate limit (429 RPM): retries up to 5 times with backoff
+    - Daily quota exhausted (RESOURCE_EXHAUSTED + limit:0): fails fast with
+      a clear message. No point waiting 7x60s for a daily limit to reset.
+    - Server errors (503): retries up to 3 times
     """
+    import re
     max_retries = 5
     for attempt in range(max_retries):
         try:
@@ -39,18 +45,92 @@ def call_llm(system_prompt: str, user_prompt: str, max_tokens: int = 3000) -> st
                 return _call_gemini(system_prompt, user_prompt, max_tokens)
             elif LLM_PROVIDER == "anthropic":
                 return _call_anthropic(system_prompt, user_prompt, max_tokens)
+            elif LLM_PROVIDER == "groq":
+                return _call_groq(system_prompt, user_prompt, max_tokens)
             else:
-                raise ValueError(f"Unknown LLM_PROVIDER: {LLM_PROVIDER}")
+                raise ValueError(f"Unknown LLM_PROVIDER: {LLM_PROVIDER}. Choose: gemini, anthropic, groq")
         except Exception as e:
-            err_str = str(e).lower()
-            is_retryable = any(msg in err_str for msg in ["503", "429", "unavailable", "rate limit", "demand", "resourceexhausted"])
+            err_str = str(e)
+            err_lower = err_str.lower()
+
+            # Detect daily quota exhaustion: only fail fast when the per-day quota
+            # is the SOLE violation and per-minute limits are not also listed.
+            # (Google often shows per-day alongside per-minute on RPM hits, which
+            # resets in <60s and should be retried normally.)
+            is_daily_exhausted = (
+                "resource_exhausted" in err_lower
+                and "PerDay" in err_str
+                and "PerMinute" not in err_str  # if per-minute also listed, it's just RPM throttle
+            )
+            if is_daily_exhausted:
+                raise RuntimeError(
+                    "DAILY QUOTA EXHAUSTED: Your Gemini API key has reached its daily "
+                    "free-tier limit. Options:\n"
+                    "  1. Enable billing at https://console.cloud.google.com/billing\n"
+                    "  2. Use a fresh API key from a different Google account\n"
+                    "  3. Wait until tomorrow (quota resets ~midnight Pacific time)"
+                ) from e
+
+            is_retryable = any(msg in err_lower for msg in [
+                "503", "429", "unavailable", "rate limit", "demand",
+                "resource_exhausted", "resourceexhausted"
+            ])
             if is_retryable and attempt < max_retries - 1:
-                wait_time = (attempt + 1) * 2  # 2s, 4s, 6s, 8s backoff
-                print(f"[llm_client] LLM Call failed: {e}. Retrying in {wait_time}s... (Attempt {attempt+1}/{max_retries})")
+                wait_time = (attempt + 1) * 3
+                delay_match = re.search(r"Please retry in (\d+\.?\d*)s", err_str, re.IGNORECASE)
+                if delay_match:
+                    wait_time = float(delay_match.group(1)) + 1.0
+                else:
+                    delay_dict_match = re.search(
+                        r"['\"]retryDelay['\"]\s*:\s*['\"](\d+)s['\"]", err_str, re.IGNORECASE
+                    )
+                    if delay_dict_match:
+                        wait_time = float(delay_dict_match.group(1)) + 1.0
+                # Cap wait at 15s — if it's a per-minute limit it resets in 60s max
+                wait_time = min(wait_time, 15.0)
+                print(f"[llm_client] Retrying in {wait_time:.1f}s... (attempt {attempt+1}/{max_retries})")
                 time.sleep(wait_time)
             else:
                 raise e
-    raise RuntimeError("LLM Call failed after max retries.")
+    raise RuntimeError("LLM call failed after max retries.")
+
+
+def _call_groq(system_prompt, user_prompt, max_tokens):
+    """
+    Groq: ultra-fast LPU inference. Free tier = 14,400 req/day, no credit card needed.
+    Model: llama-3.3-70b-versatile — comparable quality to Gemini 2.0 Flash.
+    Switch back to Gemini anytime: set LLM_PROVIDER=gemini in .env
+    """
+    try:
+        from groq import Groq
+    except ImportError:
+        raise RuntimeError(
+            "groq package not installed. Run: venv\\Scripts\\pip install groq"
+        )
+
+    api_key = os.environ.get("GROQ_API_KEY")
+    if not api_key:
+        raise RuntimeError("GROQ_API_KEY not set. Add it to your .env file.")
+
+    api_key = api_key.strip().strip('"').strip("'")
+    model_name = os.environ.get("GROQ_MODEL", "llama-3.3-70b-versatile")
+
+    client = Groq(api_key=api_key)
+    
+    t0 = time.time()
+    print(f"[{time.strftime('%H:%M:%S')}] [Groq] Calling {model_name}...")
+    response = client.chat.completions.create(
+        model=model_name,
+        messages=[
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": user_prompt},
+        ],
+        max_tokens=max_tokens,
+    )
+    duration = time.time() - t0
+    print(f"[{time.strftime('%H:%M:%S')}] [Groq] Responded in {duration:.1f}s")
+    
+    return response.choices[0].message.content.strip()
 
 
 def _call_gemini(system_prompt, user_prompt, max_tokens):

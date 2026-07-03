@@ -376,6 +376,14 @@ with st.sidebar:
         help="Simulates the entire research, adversarial debate, and judging loop with pre-cached high-fidelity literature. Bypass Google API rate limits (RESOURCE_EXHAUSTED) instantly.",
     )
     
+    enable_adk_planner = st.checkbox(
+        "🧭 Enable Google ADK Research Planner",
+        value=True,
+        help="Uses a Google ADK agent to check evidence coverage "
+             "after opening arguments and fetch more literature if "
+             "thin. Adds one extra Gemini API call per debate."
+    )
+    
     run_clicked = st.button("Initialize Stance & Run Debate", type="primary")
 
     # Reset button
@@ -395,6 +403,7 @@ if "debate_started" not in st.session_state:
     st.session_state.debate_hypotheses = {}
     st.session_state.debate_verdict = ""
     st.session_state.debate_challenge = ""
+    st.session_state.adk_planner_decision = None
 
 # Sleek Top Header Bar Function
 header_placeholder = st.empty()
@@ -503,6 +512,34 @@ def render_stances():
             """, unsafe_allow_html=True)
 
 # Render speech turns helper
+def render_adk_planner():
+    decision = st.session_state.get("adk_planner_decision")
+    if not decision:
+        return
+    
+    need_more = decision.get("need_more_research", False)
+    reasoning = decision.get("reasoning", "")
+    query_used = decision.get("query_used")
+    
+    badge_html = (
+        f'<span class="badge-retry" style="margin-left: 0;">🔍 Additional Search: {query_used}</span>'
+        if need_more and query_used
+        else '<span class="badge-grounded">Coverage sufficient ✅</span>'
+    )
+    
+    status_msg = "Fetched more evidence to address thin coverage." if need_more else "No additional research required."
+    
+    st.markdown(f"""
+    <div class="glass-card" style="padding: 22px; margin: 15px 0 25px 0; border-left: 4px solid #fbbf24 !important; box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.5), 0 0 25px rgba(251, 191, 36, 0.06) !important;">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; font-family: 'Outfit', sans-serif;">
+            <div style="font-weight: 700; font-size: 1.1rem; color: #fbbf24; letter-spacing: 0.02em; text-transform: uppercase;">🧭 Google ADK Research Planner</div>
+            <div>{badge_html}</div>
+        </div>
+        <p style="font-size: 1.0rem; color: #f1f5f9; line-height: 1.5; margin: 0 0 10px 0;">{reasoning}</p>
+        <div style="font-size: 0.85rem; color: #94a3b8; font-style: italic;">{status_msg}</div>
+    </div>
+    """, unsafe_allow_html=True)
+
 def render_turns(stream_last=False):
     for i, turn in enumerate(st.session_state.debate_turns):
         is_adv_a = turn["speaker"] == "Advocate A"
@@ -548,6 +585,9 @@ def render_turns(stream_last=False):
             if not grounded:
                 with st.expander("Grounding audit details"):
                     st.info(turn["grounding"]["warning"])
+                    
+        if i == 1 and st.session_state.get("adk_planner_decision"):
+            render_adk_planner()
 
 # Render Judge Verdict helper
 def render_verdict():
@@ -592,17 +632,17 @@ def render_verdict():
 @st.dialog("Logic & Evidence Connections Web", width="large")
 def open_logic_dialog(mermaid_code):
     st.components.v1.html(f"""
-    <div style="display: block; width: 100%; background-color: #090a10; padding: 20px; border-radius: 12px; border: 1px solid #1f2437; overflow: auto; box-sizing: border-box;">
+    <div style="display: block; width: 100%; height: 100%; background-color: #090a10; padding: 20px; border-radius: 12px; border: 1px solid #1f2437; overflow: auto; box-sizing: border-box;">
         <pre class="mermaid" style="background-color: transparent; margin: 0; padding: 0; width: 100%; overflow: auto;">
 {mermaid_code}
         </pre>
     </div>
     <script type="module">
       import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.esm.min.mjs';
-      mermaid.initialize({{ startOnLoad: true, theme: 'dark', flowchart: {{ useMaxWidth: true }} }});
+      mermaid.initialize({{ startOnLoad: true, theme: 'dark', flowchart: {{ useMaxWidth: false }} }});
       mermaid.contentLoaded();
     </script>
-    """, height=400)
+    """, height=650, scrolling=True)
 
 # Render Mermaid logic connections web helper
 def render_mermaid_web():
@@ -665,41 +705,25 @@ def render_mermaid_web():
 # Render complete literature tab bibliography
 def render_bibliography():
     st.markdown("### 📚 Retrieved Literature Database")
-    tab1, tab2 = st.tabs(["Advocate A Bibliography", "Advocate B Bibliography"])
     
-    with tab1:
-        if "Advocate A" in st.session_state.debate_hypotheses:
-            for i, p in enumerate(st.session_state.debate_hypotheses["Advocate A"]["papers"], 1):
-                url = p.get("url", "#")
-                st.markdown(f"""
-                <div class="glass-card" style="padding: 20px; margin-bottom: 16px; border-left: 1px solid rgba(14,165,233,0.25) !important;">
-                    <div style="font-family: 'Outfit', sans-serif; font-size: 1.15rem; font-weight: 700; line-height: 1.35; margin-bottom: 6px;">
-                        [{i}] {p['title']} 
-                        <a href="{url}" target="_blank" style="color: #38bdf8; text-decoration: none; font-size: 0.95rem; margin-left: 8px;">🔗</a>
-                    </div>
-                    <div style="font-family: 'Fira Code', monospace; font-size: 0.8rem; color: #64748b; margin-bottom: 12px;">Year: {p['year']} | Citations: {p['citationCount']}</div>
-                    <div style="border-left: 2px solid #334155; padding-left: 12px; margin-top: 10px; color: #94a3b8; font-style: italic; font-size: 0.9rem; line-height: 1.5;">
-                        <strong>Abstract excerpt:</strong> {p['abstract'][:400]}...
-                    </div>
+    # Since both advocates currently query the same topic simultaneously, their paper base is shared.
+    # We display a unified bibliography here instead of redundant tabs.
+    if "Advocate A" in st.session_state.debate_hypotheses:
+        papers = st.session_state.debate_hypotheses["Advocate A"]["papers"]
+        for i, p in enumerate(papers, 1):
+            url = p.get("url", "#")
+            st.markdown(f"""
+            <div class="glass-card" style="padding: 20px; margin-bottom: 16px; border-left: 1px solid rgba(139, 92, 246, 0.25) !important;">
+                <div style="font-family: 'Outfit', sans-serif; font-size: 1.15rem; font-weight: 700; line-height: 1.35; margin-bottom: 6px;">
+                    [{i}] {p['title']} 
+                    <a href="{url}" target="_blank" style="color: #a78bfa; text-decoration: none; font-size: 0.95rem; margin-left: 8px;">🔗</a>
                 </div>
-                """, unsafe_allow_html=True)
-                
-    with tab2:
-        if "Advocate B" in st.session_state.debate_hypotheses:
-            for i, p in enumerate(st.session_state.debate_hypotheses["Advocate B"]["papers"], 1):
-                url = p.get("url", "#")
-                st.markdown(f"""
-                <div class="glass-card" style="padding: 20px; margin-bottom: 16px; border-left: 1px solid rgba(217,119,6,0.25) !important;">
-                    <div style="font-family: 'Outfit', sans-serif; font-size: 1.15rem; font-weight: 700; line-height: 1.35; margin-bottom: 6px;">
-                        [{i}] {p['title']} 
-                        <a href="{url}" target="_blank" style="color: #fbbf24; text-decoration: none; font-size: 0.95rem; margin-left: 8px;">🔗</a>
-                    </div>
-                    <div style="font-family: 'Fira Code', monospace; font-size: 0.8rem; color: #64748b; margin-bottom: 12px;">Year: {p['year']} | Citations: {p['citationCount']}</div>
-                    <div style="border-left: 2px solid #334155; padding-left: 12px; margin-top: 10px; color: #94a3b8; font-style: italic; font-size: 0.9rem; line-height: 1.5;">
-                        <strong>Abstract excerpt:</strong> {p['abstract'][:400]}...
-                    </div>
+                <div style="font-family: 'Fira Code', monospace; font-size: 0.8rem; color: #64748b; margin-bottom: 12px;">Year: {p['year']} | Citations: {p['citationCount']} | Source: {p.get('source', 'Unknown')}</div>
+                <div style="border-left: 2px solid #334155; padding-left: 12px; margin-top: 10px; color: #94a3b8; font-style: italic; font-size: 0.9rem; line-height: 1.5;">
+                    <strong>Abstract excerpt:</strong> {p['abstract'][:400]}...
                 </div>
-                """, unsafe_allow_html=True)
+            </div>
+            """, unsafe_allow_html=True)
 
 # Main trigger execution
 if run_clicked and not st.session_state.debate_started:
@@ -710,7 +734,8 @@ if run_clicked and not st.session_state.debate_started:
     st.session_state.debate_turns = []
     st.session_state.debate_hypotheses = {}
     st.session_state.debate_verdict = ""
-    st.session_state.debate_stream = run_debate_stream(topic, rounds=rounds, use_mock=use_mock)
+    st.session_state.adk_planner_decision = None
+    st.session_state.debate_stream = run_debate_stream(topic, rounds=rounds, use_mock=use_mock, use_adk_planner=enable_adk_planner)
     st.rerun()
 
 # Render Static Layout
@@ -765,6 +790,11 @@ if st.session_state.debate_started and not st.session_state.debate_paused and no
             elif event["type"] == "pause":
                 st.session_state.debate_paused = True
                 st.session_state.debate_status = "Status: Intermission - Inject challenge directive"
+                st.rerun()
+                
+            # 5b. Handle ADK planner decision
+            elif event["type"] == "adk_planner":
+                st.session_state.adk_planner_decision = event["data"]
                 st.rerun()
                 
             # 6. Handle Verdict Summaries

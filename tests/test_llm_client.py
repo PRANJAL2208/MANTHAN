@@ -55,7 +55,7 @@ def test_call_llm_retry_on_rate_limit():
         assert time.sleep.call_count == 2
 
 def test_call_llm_raises_error_after_max_retries():
-    """Tests that call_llm raises an exception when the error persists after 5 attempts."""
+    """Tests that call_llm raises an exception when the error persists after 7 attempts."""
     with patch("llm_client._call_gemini", side_effect=Exception("Error code 503 Service Unavailable")) as mock_gemini, \
          patch("llm_client.LLM_PROVIDER", "gemini"):
         
@@ -63,8 +63,8 @@ def test_call_llm_raises_error_after_max_retries():
             call_llm("sys prompt", "user prompt")
         
         assert "503" in str(exc_info.value)
-        # Should call 5 times (attempts 0, 1, 2, 3, 4)
-        assert mock_gemini.call_count == 5
+        # Should call 7 times (attempts 0, 1, 2, 3, 4, 5, 6)
+        assert mock_gemini.call_count == 7
 
 def test_call_llm_non_retryable_error_raised_immediately():
     """Tests that non-retryable errors (e.g. invalid arguments) are raised immediately without retries."""

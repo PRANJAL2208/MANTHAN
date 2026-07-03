@@ -14,7 +14,7 @@ import streamlit as st
 from debate_engine import run_debate_stream
 
 st.set_page_config(page_title="Scientific Arena: Multi-Agent Debate", layout="wide")
-st.logo("docs/logo.png")
+st.logo("docs/logo_wide.png", icon_image="docs/logo.png")
 
 # Custom CSS for an intense, highly styled "Scientific Arena" vibe
 st.markdown("""

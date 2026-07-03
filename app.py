@@ -14,6 +14,7 @@ import streamlit as st
 from debate_engine import run_debate_stream
 
 st.set_page_config(page_title="Scientific Arena: Multi-Agent Debate", layout="wide")
+st.logo("docs/logo.png")
 
 # Custom CSS for an intense, highly styled "Scientific Arena" vibe
 st.markdown("""
@@ -405,17 +406,6 @@ if "debate_started" not in st.session_state:
     st.session_state.debate_challenge = ""
     st.session_state.adk_planner_decision = None
 
-import base64
-def get_base64_image(image_path):
-    try:
-        with open(image_path, "rb") as img_file:
-            return base64.b64encode(img_file.read()).decode()
-    except Exception:
-        return ""
-
-logo_b64 = get_base64_image("docs/logo.png")
-logo_html = f'<img src="data:image/png;base64,{logo_b64}" style="height: 18px; vertical-align: middle; margin-right: 6px; margin-bottom: 2px;">' if logo_b64 else '◆'
-
 # Sleek Top Header Bar Function
 header_placeholder = st.empty()
 
@@ -435,7 +425,7 @@ def update_header(status_text, is_concluded=False):
     header_placeholder.markdown(f"""
     <div style="display: flex; justify-content: space-between; align-items: center; background: rgba(8, 8, 10, 0.4); border: 1px solid rgba(255, 255, 255, 0.05); padding: 8px 16px; border-radius: 8px; font-family: 'Fira Code', monospace; font-size: 0.78rem; margin-bottom: 25px; letter-spacing: 0.05em; color: #94a3b8; width: 100%;">
         <div style="display: flex; align-items: center; gap: 10px; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; max-width: 75%;">
-            <span style="color: #e2e8f0; font-weight: 700; font-family: 'Outfit', sans-serif; letter-spacing: 0.05em;">{logo_html} MANTHAN</span>
+            <span style="color: #10b981; font-weight: 700;">◆ DEBATE ARENA</span>
             <span style="color: rgba(255,255,255,0.08);">|</span>
             <span style="color: #cbd5e1; text-transform: uppercase;">Topic: "{topic_clipped}"</span>
         </div>

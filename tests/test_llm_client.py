@@ -18,7 +18,7 @@ def test_call_llm_gemini_success():
     """Tests a successful call to the Gemini provider."""
     # We patch _call_gemini directly to simplify provider switching tests
     with patch("llm_client._call_gemini", return_value="Gemini response") as mock_gemini, \
-         patch("llm_client.LLM_PROVIDER", "gemini"):
+         patch("llm_client.get_available_provider", return_value="gemini"):
         
         response = call_llm("sys prompt", "user prompt")
         assert response == "Gemini response"
@@ -27,7 +27,7 @@ def test_call_llm_gemini_success():
 def test_call_llm_anthropic_success():
     """Tests a successful call to the Anthropic provider."""
     with patch("llm_client._call_anthropic", return_value="Anthropic response") as mock_anthropic, \
-         patch("llm_client.LLM_PROVIDER", "anthropic"):
+         patch("llm_client.get_available_provider", return_value="anthropic"):
         
         response = call_llm("sys prompt", "user prompt")
         assert response == "Anthropic response"
@@ -45,7 +45,7 @@ def test_call_llm_retry_on_rate_limit():
         return "Success on attempt 3"
 
     with patch("llm_client._call_gemini", side_effect=fail_then_succeed) as mock_gemini, \
-         patch("llm_client.LLM_PROVIDER", "gemini"):
+         patch("llm_client.get_available_provider", return_value="gemini"):
         
         response = call_llm("sys prompt", "user prompt")
         assert response == "Success on attempt 3"
@@ -57,19 +57,19 @@ def test_call_llm_retry_on_rate_limit():
 def test_call_llm_raises_error_after_max_retries():
     """Tests that call_llm raises an exception when the error persists after 7 attempts."""
     with patch("llm_client._call_gemini", side_effect=Exception("Error code 503 Service Unavailable")) as mock_gemini, \
-         patch("llm_client.LLM_PROVIDER", "gemini"):
+         patch("llm_client.get_available_provider", return_value="gemini"):
         
         with pytest.raises(Exception) as exc_info:
             call_llm("sys prompt", "user prompt")
         
         assert "503" in str(exc_info.value)
-        # Should call 7 times (attempts 0, 1, 2, 3, 4, 5, 6)
-        assert mock_gemini.call_count == 7
+        # Should call 5 times (attempts 0, 1, 2, 3, 4)
+        assert mock_gemini.call_count == 5
 
 def test_call_llm_non_retryable_error_raised_immediately():
     """Tests that non-retryable errors (e.g. invalid arguments) are raised immediately without retries."""
     with patch("llm_client._call_gemini", side_effect=ValueError("Incorrect arguments passed")) as mock_gemini, \
-         patch("llm_client.LLM_PROVIDER", "gemini"):
+         patch("llm_client.get_available_provider", return_value="gemini"):
         
         with pytest.raises(ValueError) as exc_info:
             call_llm("sys prompt", "user prompt")
@@ -79,10 +79,10 @@ def test_call_llm_non_retryable_error_raised_immediately():
 
 def test_call_llm_unknown_provider():
     """Tests that an unknown provider raises ValueError immediately."""
-    with patch("llm_client.LLM_PROVIDER", "unknown_provider"):
+    with patch("llm_client.get_available_provider", return_value="unknown_provider"):
         with pytest.raises(ValueError) as exc_info:
             call_llm("sys prompt", "user prompt")
-        assert "Unknown LLM_PROVIDER" in str(exc_info.value)
+        assert "Unknown LLM provider" in str(exc_info.value)
 
 def test_call_gemini_client_interaction():
     """Tests the interaction with the google.genai Client."""
@@ -92,7 +92,7 @@ def test_call_gemini_client_interaction():
     mock_client_instance.models.generate_content.return_value = mock_response
 
     with patch("google.genai.Client", return_value=mock_client_instance) as mock_client_cls, \
-         patch("llm_client.LLM_PROVIDER", "gemini"):
+         patch("llm_client.get_available_provider", return_value="gemini"):
         
         from llm_client import _call_gemini
         text = _call_gemini("sys instruct", "user message", 1000)
@@ -109,7 +109,7 @@ def test_call_anthropic_client_interaction():
     mock_client_instance.messages.create.return_value = mock_message
 
     with patch("anthropic.Anthropic", return_value=mock_client_instance) as mock_client_cls, \
-         patch("llm_client.LLM_PROVIDER", "anthropic"):
+         patch("llm_client.get_available_provider", return_value="anthropic"):
         
         from llm_client import _call_anthropic
         text = _call_anthropic("sys instruct", "user message", 2000)

@@ -31,7 +31,25 @@ def get_secret(key_name, default=None):
         pass
     return os.environ.get(key_name, default)
 
-LLM_PROVIDER = get_secret("LLM_PROVIDER", "groq")  # "gemini", "anthropic", or "groq"
+def get_available_provider():
+    # If explicitly set, respect it
+    explicit_provider = get_secret("LLM_PROVIDER")
+    if explicit_provider in ["groq", "gemini", "anthropic"]:
+        return explicit_provider
+        
+    # Auto-detect based on available keys
+    if get_secret("GROQ_API_KEY"):
+        return "groq"
+    if get_secret("GEMINI_API_KEY"):
+        return "gemini"
+    if get_secret("ANTHROPIC_API_KEY"):
+        return "anthropic"
+        
+    # Default to groq so the error messages point them in the right direction
+    return "groq"
+
+# Determine the provider dynamically at runtime
+LLM_PROVIDER = get_available_provider()
 
 
 import time
@@ -48,17 +66,20 @@ def call_llm(system_prompt: str, user_prompt: str, max_tokens: int = 3000) -> st
     - Server errors (503): retries up to 3 times
     """
     import re
+    
+    current_provider = get_available_provider()
+    
     max_retries = 5
     for attempt in range(max_retries):
         try:
-            if LLM_PROVIDER == "gemini":
+            if current_provider == "gemini":
                 return _call_gemini(system_prompt, user_prompt, max_tokens)
-            elif LLM_PROVIDER == "anthropic":
+            elif current_provider == "anthropic":
                 return _call_anthropic(system_prompt, user_prompt, max_tokens)
-            elif LLM_PROVIDER == "groq":
+            elif current_provider == "groq":
                 return _call_groq(system_prompt, user_prompt, max_tokens)
             else:
-                raise ValueError(f"Unknown LLM_PROVIDER: {LLM_PROVIDER}. Choose: gemini, anthropic, groq")
+                raise ValueError(f"Unknown LLM provider: {current_provider}. Choose: gemini, anthropic, groq")
         except Exception as e:
             err_str = str(e)
             err_lower = err_str.lower()

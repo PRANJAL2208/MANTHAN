@@ -29,8 +29,20 @@ import xml.etree.ElementTree as ET
 # ─── Config ─────────────────────────────────────────────────────────────────
 
 SEMANTIC_SCHOLAR_API = "https://api.semanticscholar.org/graph/v1/paper/search"
-SEMANTIC_SCHOLAR_API_KEY = os.environ.get("SEMANTIC_SCHOLAR_API_KEY")
-NCBI_API_KEY = os.environ.get("NCBI_API_KEY", "")
+try:
+    from llm_client import get_secret
+except ImportError:
+    def get_secret(key_name, default=None):
+        try:
+            import streamlit as st
+            if key_name in st.secrets:
+                return st.secrets[key_name]
+        except Exception:
+            pass
+        return os.environ.get(key_name, default)
+
+SEMANTIC_SCHOLAR_API_KEY = get_secret("SEMANTIC_SCHOLAR_API_KEY")
+NCBI_API_KEY = get_secret("NCBI_API_KEY", "")
 
 CACHE_DB_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), ".search_cache.db")
 

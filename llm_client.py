@@ -21,7 +21,17 @@ from dotenv import load_dotenv
 
 load_dotenv(override=True)  # reads the .env file in the project folder and loads it into os.environ
 
-LLM_PROVIDER = os.environ.get("LLM_PROVIDER", "gemini")  # "gemini", "anthropic", or "groq"
+def get_secret(key_name, default=None):
+    """Try to get a secret from Streamlit secrets first, then fallback to os.environ."""
+    try:
+        import streamlit as st
+        if key_name in st.secrets:
+            return st.secrets[key_name]
+    except Exception:
+        pass
+    return os.environ.get(key_name, default)
+
+LLM_PROVIDER = get_secret("LLM_PROVIDER", "groq")  # "gemini", "anthropic", or "groq"
 
 
 import time
@@ -108,12 +118,12 @@ def _call_groq(system_prompt, user_prompt, max_tokens):
             "groq package not installed. Run: venv\\Scripts\\pip install groq"
         )
 
-    api_key = os.environ.get("GROQ_API_KEY")
+    api_key = get_secret("GROQ_API_KEY")
     if not api_key:
-        raise RuntimeError("GROQ_API_KEY not set. Add it to your .env file.")
+        raise RuntimeError("GROQ_API_KEY not set. Add it to your .env file or Streamlit Secrets.")
 
     api_key = api_key.strip().strip('"').strip("'")
-    model_name = os.environ.get("GROQ_MODEL", "llama-3.3-70b-versatile")
+    model_name = get_secret("GROQ_MODEL", "llama-3.3-70b-versatile")
 
     client = Groq(api_key=api_key)
     
@@ -137,12 +147,12 @@ def _call_gemini(system_prompt, user_prompt, max_tokens):
     from google import genai
     from google.genai import types
 
-    api_key = os.environ.get("GEMINI_API_KEY")
+    api_key = get_secret("GEMINI_API_KEY")
     if not api_key:
-        raise RuntimeError("GEMINI_API_KEY not set. Add it to your .env file.")
+        raise RuntimeError("GEMINI_API_KEY not set. Add it to your .env file or Streamlit Secrets.")
 
     api_key = api_key.strip().strip('"').strip("'")
-    model_name = os.environ.get("GEMINI_MODEL", "gemini-2.5-flash")
+    model_name = get_secret("GEMINI_MODEL", "gemini-2.5-flash")
 
     client = genai.Client(api_key=api_key)
     response = client.models.generate_content(
@@ -159,9 +169,9 @@ def _call_gemini(system_prompt, user_prompt, max_tokens):
 def _call_anthropic(system_prompt, user_prompt, max_tokens):
     import anthropic
 
-    api_key = os.environ.get("ANTHROPIC_API_KEY")
+    api_key = get_secret("ANTHROPIC_API_KEY")
     if not api_key:
-        raise RuntimeError("ANTHROPIC_API_KEY not set. Add it to your .env file.")
+        raise RuntimeError("ANTHROPIC_API_KEY not set. Add it to your .env file or Streamlit Secrets.")
 
     client = anthropic.Anthropic(api_key=api_key)
     response = client.messages.create(

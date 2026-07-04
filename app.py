@@ -13,7 +13,7 @@ import time
 import streamlit as st
 from debate_engine import run_debate_stream
 
-st.set_page_config(page_title="Scientific Arena: Multi-Agent Debate", layout="wide")
+st.set_page_config(page_title="Scientific Arena: Multi-Agent Debate", layout="wide", initial_sidebar_state="expanded")
 st.logo("docs/logo_wide.png", icon_image="docs/logo.png")
 
 # Custom CSS for an intense, highly styled "Scientific Arena" vibe
@@ -355,6 +355,59 @@ st.markdown("""
         font-family: 'Fira Code', monospace;
         margin-left: 10px;
     }
+
+    /* Mobile Responsiveness */
+    @media (max-width: 768px) {
+        .chat-bubble-a, .chat-bubble-b {
+            width: 100% !important;
+            padding: 16px 18px !important;
+            margin: 10px 0 !important;
+            border-radius: 12px !important;
+        }
+        .glass-card, .glass-card-a, .glass-card-b, .glass-card-judge, .judge-panel {
+            padding: 16px !important;
+        }
+        .judge-header {
+            flex-direction: column !important;
+            align-items: flex-start !important;
+            gap: 10px !important;
+        }
+        .arena-header-container {
+            flex-direction: column !important;
+            align-items: flex-start !important;
+            gap: 10px !important;
+            padding: 12px 16px !important;
+        }
+        .arena-header-topic {
+            max-width: 100% !important;
+            white-space: normal !important;
+            line-height: 1.4 !important;
+            text-overflow: clip !important;
+        }
+        .tug-of-war-labels {
+            flex-direction: column !important;
+            align-items: center !important;
+            gap: 6px !important;
+            font-size: 0.7rem !important;
+            text-align: center !important;
+        }
+        h3 {
+            font-size: 1.2rem !important;
+        }
+        .verdict-value {
+            font-size: 1.1rem !important;
+        }
+        .judge-icon {
+            font-size: 1.8rem;
+        }
+        .judge-title {
+            font-size: 1.2rem;
+        }
+        .badge-grounded, .badge-unverified, .badge-retry {
+            font-size: 0.65rem !important;
+            padding: 2px 8px !important;
+        }
+    }
 </style>
 """, unsafe_allow_html=True)
 
@@ -423,13 +476,13 @@ def update_header(status_text, is_concluded=False):
         topic_clipped = topic_str
 
     header_placeholder.markdown(f"""
-    <div style="display: flex; justify-content: space-between; align-items: center; background: rgba(8, 8, 10, 0.4); border: 1px solid rgba(255, 255, 255, 0.05); padding: 8px 16px; border-radius: 8px; font-family: 'Fira Code', monospace; font-size: 0.78rem; margin-bottom: 25px; letter-spacing: 0.05em; color: #94a3b8; width: 100%;">
-        <div style="display: flex; align-items: center; gap: 10px; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; max-width: 75%;">
+    <div class="arena-header-container" style="display: flex; justify-content: space-between; align-items: center; background: rgba(8, 8, 10, 0.4); border: 1px solid rgba(255, 255, 255, 0.05); padding: 8px 16px; border-radius: 8px; font-family: 'Fira Code', monospace; font-size: 0.78rem; margin-bottom: 25px; letter-spacing: 0.05em; color: #94a3b8; width: 100%;">
+        <div class="arena-header-topic" style="display: flex; align-items: center; gap: 10px; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; max-width: 75%;">
             <span style="color: #10b981; font-weight: 700;">◆ DEBATE ARENA</span>
             <span style="color: rgba(255,255,255,0.08);">|</span>
             <span style="color: #cbd5e1; text-transform: uppercase;">Topic: "{topic_clipped}"</span>
         </div>
-        <div style="display: flex; align-items: center; gap: 4px; shrink: 0;">
+        <div class="arena-header-status" style="display: flex; align-items: center; gap: 4px; shrink: 0;">
             {dot_html}
             <span style="color: #e2e8f0; font-weight: 600; text-transform: uppercase; font-size: 0.72rem;">{status_text}</span>
         </div>
@@ -443,7 +496,7 @@ update_header(st.session_state.debate_status)
 def render_tug_of_war():
     st.markdown(f"""
     <div style="background: rgba(8, 8, 10, 0.6); border: 1px solid rgba(255, 255, 255, 0.06); backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px); border-radius: 12px; padding: 16px 20px; margin-bottom: 30px; box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.5);">
-        <div style="display: flex; justify-content: space-between; font-family: 'Outfit', sans-serif; font-size: 0.8rem; font-weight: 700; letter-spacing: 0.08em; color: #64748b; margin-bottom: 10px;">
+        <div class="tug-of-war-labels" style="display: flex; justify-content: space-between; font-family: 'Outfit', sans-serif; font-size: 0.8rem; font-weight: 700; letter-spacing: 0.08em; color: #64748b; margin-bottom: 10px;">
             <span style="color: #34d399;">◄ ADVOCATE A CREDIBILITY INDEX</span>
             <span style="color: #a78bfa;">ADVOCATE B CREDIBILITY INDEX ►</span>
         </div>
@@ -743,6 +796,23 @@ if run_clicked and not st.session_state.debate_started:
 if st.session_state.debate_started:
     render_tug_of_war()
     render_stances()
+else:
+    st.markdown("""
+    <div style="text-align: center; margin-top: 8vh; padding: 20px;">
+        <h1 style="font-family: 'Outfit', sans-serif; font-size: 2.8rem; margin-bottom: 15px; background: linear-gradient(135deg, #10b981 0%, #8b5cf6 100%); -webkit-background-clip: text; -webkit-text-fill-color: transparent;">Scientific Debate Arena</h1>
+        <p style="font-size: 1.15rem; color: #94a3b8; max-width: 650px; margin: 0 auto 35px auto; line-height: 1.6;">
+            A multi-agent architecture that cross-examines scientific literature to find the truth through adversarial reasoning.
+        </p>
+        <div class="glass-card" style="display: inline-block; padding: 25px 35px !important; border-top: 3px solid #10b981 !important; text-align: left; max-width: 90%;">
+            <h3 style="color: #f1f5f9; margin-top: 0; margin-bottom: 15px; font-size: 1.25rem;">🚀 How to get started:</h3>
+            <ol style="color: #cbd5e1; font-size: 1.05rem; line-height: 1.8; margin-bottom: 0; padding-left: 20px;">
+                <li>Open the <strong>configuration sidebar</strong> (click the <strong>&gt;</strong> icon in the top left corner if on mobile).</li>
+                <li>Enter your disputed <strong>scientific topic</strong> or hypothesis.</li>
+                <li>Adjust your simulation settings and click <strong>"Initialize Stance & Run Debate"</strong>.</li>
+            </ol>
+        </div>
+    </div>
+    """, unsafe_allow_html=True)
 
 # Generator Consuming Loop
 if st.session_state.debate_started and not st.session_state.debate_paused and not st.session_state.debate_finished:

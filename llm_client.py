@@ -22,9 +22,12 @@ from dotenv import load_dotenv
 load_dotenv(override=True)  # reads the .env file in the project folder and loads it into os.environ
 
 def get_secret(key_name, default=None):
-    """Try to get a secret from Streamlit secrets first, then fallback to os.environ."""
+    """Try to get a secret from Streamlit session state first, then secrets, then fallback to os.environ."""
     try:
         import streamlit as st
+        session_key = key_name.lower()
+        if session_key in st.session_state and st.session_state[session_key]:
+            return st.session_state[session_key].strip()
         if key_name in st.secrets:
             return st.secrets[key_name]
     except Exception:

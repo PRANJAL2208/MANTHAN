@@ -480,6 +480,29 @@ with st.sidebar:
             del st.session_state[key]
         st.rerun()
 
+    st.markdown("---")
+    st.subheader("🔑 User API Keys (Optional)")
+    st.caption("If the hosted free-tier API quotas are exhausted, paste your own key(s) below. These keys are only stored in your browser session state and never shared.")
+    
+    st.text_input(
+        "Groq API Key",
+        type="password",
+        key="groq_api_key",
+        placeholder="gsk_..."
+    )
+    st.text_input(
+        "Gemini API Key",
+        type="password",
+        key="gemini_api_key",
+        placeholder="AIzaSy..."
+    )
+    st.text_input(
+        "Anthropic API Key",
+        type="password",
+        key="anthropic_api_key",
+        placeholder="sk-ant-..."
+    )
+
 # Initialize Session State Variables
 if "user_session_id" not in st.session_state:
     st.session_state.user_session_id = str(uuid.uuid4())

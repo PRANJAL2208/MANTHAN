@@ -521,6 +521,7 @@ if "debate_started" not in st.session_state:
     st.session_state.debate_challenge = ""
     st.session_state.adk_planner_decision = None
     st.session_state.debate_error = None
+    st.session_state.system_busy_warning = None
 
 # Sleek Top Header Bar Function
 header_placeholder = st.empty()
@@ -554,6 +555,10 @@ def update_header(status_text, is_concluded=False):
 
 # Initial draw of header
 update_header(st.session_state.debate_status)
+
+# Draw warning on main screen if system is busy or user limit is reached
+if st.session_state.get("system_busy_warning"):
+    st.warning(st.session_state.system_busy_warning)
 
 # Tug of War dial helper
 def render_tug_of_war():
@@ -844,14 +849,17 @@ def render_bibliography():
 
 # Main trigger execution
 if run_clicked and (not st.session_state.debate_started or st.session_state.debate_finished):
+    # Clear any previous warning
+    st.session_state.system_busy_warning = None
+
     # 1. Enforce Per-Session User Limit (only in active live mode, bypass in sandbox mock mode)
     if not use_mock and st.session_state.session_run_count >= 3:
-        st.sidebar.error(
+        st.session_state.system_busy_warning = (
             "🔒 **Session Limit Reached:** You have run 3 live debates in this session. "
             "To prevent API rate-limit exhaustion, please clone the repository to run unlimited debates locally! "
             "[GitHub Repository](https://github.com/PRANJAL2208/MANTHAN)"
         )
-        st.stop()
+        st.rerun()
 
     # 2. Enforce Global Concurrency Lock (Only 1 active debate at a time in live mode)
     can_start = False
@@ -865,12 +873,14 @@ if run_clicked and (not st.session_state.debate_started or st.session_state.deba
         can_start = True
 
     if not can_start:
-        st.sidebar.warning(
+        st.session_state.system_busy_warning = (
             "⏳ **System Busy:** Another visitor is currently running a debate. "
             "To prevent API rate-limit crashes, only 1 debate can run at a time. "
-            "Please wait ~60 seconds for their debate to complete, or run it locally!"
+            "Please wait ~60 seconds for their debate to complete, or run it locally!\n\n"
+            "*(Note: We are actively working on scaling the architecture and will provide "
+            "simultaneous concurrent access to everyone in our upcoming systems upgrade!)*"
         )
-        st.stop()
+        st.rerun()
 
     st.session_state.debate_started = True
     st.session_state.debate_paused = False

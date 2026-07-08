@@ -149,10 +149,15 @@ def call_llm(system_prompt: str, user_prompt: str, max_tokens: int = 3000) -> st
                     "429", "rate limit", "resource_exhausted", "resourceexhausted"
                 ])
                 if is_rate_limit and len(available_providers) > 1 and provider != available_providers[-1]:
-                    next_provider = available_providers[available_providers.index(provider) + 1]
-                    print(f"[llm_client] Rate limit hit on {provider}, triggering instant fallback to {next_provider}...")
-                    _show_onscreen_fallback(provider, next_provider, "rate limited")
-                    break  # Break inner loop to try next provider immediately
+                    if provider == "groq":
+                        # For Groq, we wait and retry to preserve premium quality
+                        pass
+                    else:
+                        # For backup providers (like Gemini), fail-fast instantly without sleeping
+                        next_provider = available_providers[available_providers.index(provider) + 1]
+                        print(f"[llm_client] Rate limit hit on {provider}, triggering instant fallback to {next_provider}...")
+                        _show_onscreen_fallback(provider, next_provider, "rate limited")
+                        break  # Break inner loop to try next provider immediately
 
                 if attempt < max_retries - 1:
                     wait_time = (attempt + 1) * 3

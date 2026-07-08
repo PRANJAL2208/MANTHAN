@@ -107,6 +107,28 @@ def call_llm(system_prompt: str, user_prompt: str, max_tokens: int = 3000) -> st
                     # Developer errors / bad requests: fail fast immediately
                     raise e
 
+                def _show_onscreen_fallback(provider_name, target_provider, reason_msg):
+                    try:
+                        import streamlit as st
+                        status_msg = f"Status: {provider_name.upper()} {reason_msg}. Swapping to {target_provider.upper()}..."
+                        st.session_state.debate_status = status_msg
+                        if "header_placeholder" in st.session_state:
+                            st.session_state.header_placeholder.markdown(f"""
+                            <div class="arena-header-container" style="display: flex; justify-content: space-between; align-items: center; background: rgba(244, 63, 94, 0.08); border: 1px solid rgba(244, 63, 94, 0.25); padding: 8px 16px; border-radius: 8px; font-family: 'Fira Code', monospace; font-size: 0.78rem; margin-bottom: 25px; letter-spacing: 0.05em; color: #fb7185; width: 100%;">
+                                <div class="arena-header-topic" style="display: flex; align-items: center; gap: 10px; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; max-width: 75%;">
+                                    <span style="color: #f43f5e; font-weight: 700;">◆ DEBATE ARENA</span>
+                                    <span style="color: rgba(255,255,255,0.08);">|</span>
+                                    <span style="color: #cbd5e1; text-transform: uppercase;">Host Quota Fallback Active</span>
+                                </div>
+                                <div class="arena-header-status" style="display: flex; align-items: center; gap: 4px; shrink: 0;">
+                                    <div style="background-color: #f43f5e; width: 6px; height: 6px; border-radius: 50%; margin-right: 6px; display: inline-block;"></div>
+                                    <span style="color: #f43f5e; font-weight: 600; text-transform: uppercase; font-size: 0.72rem;">{status_msg}</span>
+                                </div>
+                            </div>
+                            """, unsafe_allow_html=True)
+                    except Exception:
+                        pass
+
                 # Detect daily quota limits on Gemini and fail fast to trigger fallback
                 is_daily_exhausted = (
                     "resource_exhausted" in err_lower
@@ -117,11 +139,7 @@ def call_llm(system_prompt: str, user_prompt: str, max_tokens: int = 3000) -> st
                     if len(available_providers) > 1 and provider != available_providers[-1]:
                         next_provider = available_providers[available_providers.index(provider) + 1]
                         print(f"[llm_client] Quota exhausted on {provider}, triggering fallback to {next_provider}...")
-                        try:
-                            import streamlit as st
-                            st.toast(f"⚠️ Shared {provider.upper()} daily limit reached. Switching to {next_provider.upper()} fallback...", icon="🔄")
-                        except Exception:
-                            pass
+                        _show_onscreen_fallback(provider, next_provider, "daily limit reached")
                         break  # Break inner loop to try next provider immediately
                     else:
                         raise e
@@ -133,11 +151,7 @@ def call_llm(system_prompt: str, user_prompt: str, max_tokens: int = 3000) -> st
                 if is_rate_limit and len(available_providers) > 1 and provider != available_providers[-1]:
                     next_provider = available_providers[available_providers.index(provider) + 1]
                     print(f"[llm_client] Rate limit hit on {provider}, triggering instant fallback to {next_provider}...")
-                    try:
-                        import streamlit as st
-                        st.toast(f"⚠️ Shared {provider.upper()} quota busy. Switching to {next_provider.upper()} fallback...", icon="🔄")
-                    except Exception:
-                        pass
+                    _show_onscreen_fallback(provider, next_provider, "rate limited")
                     break  # Break inner loop to try next provider immediately
 
                 if attempt < max_retries - 1:

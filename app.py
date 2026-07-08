@@ -525,6 +525,7 @@ if "debate_started" not in st.session_state:
 
 # Sleek Top Header Bar Function
 header_placeholder = st.empty()
+st.session_state.header_placeholder = header_placeholder
 
 def update_header(status_text, is_concluded=False):
     status_class = "pulse-dot-demo" if use_mock else "pulse-dot-active"

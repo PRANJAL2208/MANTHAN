@@ -95,6 +95,13 @@ def _set_cached(key: str, val):
         print(f"[literature_search] Cache write failed: {e}")
 
 
+# ─── Public aliases for cache functions (used by tests & external callers) ────
+
+init_cache_db      = _init_cache
+get_cached_response = _get_cached
+set_cached_response = _set_cached
+
+
 def set_api_key(key: str):
     """Legacy helper — Semantic Scholar key can also be set via SEMANTIC_SCHOLAR_API_KEY env var."""
     global SEMANTIC_SCHOLAR_API_KEY

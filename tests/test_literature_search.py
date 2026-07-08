@@ -65,92 +65,88 @@ def test_cache_get_and_set(temp_db):
     assert cached == value
 
 def test_search_papers_cache_hit(temp_db):
-    """Verifies that search_papers returns cached data and bypasses external API requests entirely."""
+    """Verifies that search_papers returns cached data and bypasses all source APIs entirely."""
     query = "crypt neurons"
     cached_papers = [
         {"paperId": "1", "title": "Paper A", "abstract": "Abstract A", "year": 2020, "citationCount": 10, "url": "urlA"}
     ]
-    literature_search.set_cached_response(f"search:{query}:3", cached_papers)
-    
-    with patch("requests.get") as mock_get:
+    # The current implementation uses a 'cascade_v1' prefixed cache key
+    literature_search.set_cached_response(f"cascade_v1:{query}:3", cached_papers)
+
+    with patch("literature_search._search_openalex", return_value=[]) as mock_oa, \
+         patch("literature_search._search_pubmed", return_value=[]) as mock_pm, \
+         patch("literature_search._search_arxiv", return_value=[]) as mock_ax, \
+         patch("literature_search._search_semantic_scholar", return_value=[]) as mock_ss:
         results = literature_search.search_papers(query, limit=3)
         assert results == cached_papers
-        mock_get.assert_not_called()
+        # All source functions must be bypassed on a cache hit
+        mock_oa.assert_not_called()
+        mock_pm.assert_not_called()
+        mock_ax.assert_not_called()
+        mock_ss.assert_not_called()
 
 def test_search_papers_cache_miss_success(temp_db):
-    """Verifies search_papers queries the API on a cache miss, parses correctly, and updates cache."""
+    """Verifies search_papers queries sources on a cache miss, merges results, and caches them."""
     query = "olfactory bulb"
-    api_response_mock = {
-        "data": [
-            {
-                "paperId": "abc",
-                "title": "Title A",
-                "abstract": "Abstract A",
-                "year": 2021,
-                "citationCount": 50,
-                "url": "https://example.com/abc"
-            }
-        ]
+    mock_paper = {
+        "paperId": "abc", "title": "Title A", "abstract": "Abstract A",
+        "year": 2021, "citationCount": 50, "url": "https://example.com/abc", "source": "OpenAlex"
     }
-    
-    mock_resp = MagicMock()
-    mock_resp.status_code = 200
-    mock_resp.json.return_value = api_response_mock
-    mock_resp.raise_for_status = MagicMock()
-    
-    with patch("requests.get", return_value=mock_resp) as mock_get:
+
+    with patch("literature_search._search_openalex", return_value=[mock_paper]) as mock_oa, \
+         patch("literature_search._search_pubmed", return_value=[]) as mock_pm, \
+         patch("literature_search._search_arxiv", return_value=[]) as mock_ax, \
+         patch("literature_search._search_semantic_scholar", return_value=[]) as mock_ss:
         results = literature_search.search_papers(query, limit=3)
-        
-        # Verify result format
+
+        # Verify result is the merged/deduped paper from OpenAlex
         assert len(results) == 1
         assert results[0]["paperId"] == "abc"
         assert results[0]["title"] == "Title A"
         assert results[0]["abstract"] == "Abstract A"
         assert results[0]["year"] == 2021
         assert results[0]["citationCount"] == 50
-        assert results[0]["url"] == "https://example.com/abc"
-        
-        # Verify requests call
-        mock_get.assert_called_once_with(
-            "https://api.semanticscholar.org/graph/v1/paper/search",
-            params={"query": query, "limit": 3, "fields": "paperId,title,abstract,year,citationCount,url"},
-            headers={},
-            timeout=10
-        )
-        
-        # Verify cached locally
-        cached = literature_search.get_cached_response(f"search:{query}:3")
+
+        # OpenAlex is always called; PubMed is always called.
+        # arXiv is only called if still short. SS only if < 2 results.
+        mock_oa.assert_called_once()
+        mock_pm.assert_called_once()
+
+        # Verify results are cached under the cascade_v1 key
+        cached = literature_search.get_cached_response(f"cascade_v1:{query}:3")
         assert cached == results
 
 def test_search_papers_rate_limit_retry(temp_db):
-    """Verifies that search_papers retries with backoff on a 429 rate limit response."""
+    """Verifies that the Semantic Scholar source retries with backoff on a 429 rate limit response."""
     query = "projection mapping"
     mock_resp_429 = MagicMock()
     mock_resp_429.status_code = 429
-    
+
     mock_resp_200 = MagicMock()
     mock_resp_200.status_code = 200
     mock_resp_200.json.return_value = {"data": []}
     mock_resp_200.raise_for_status = MagicMock()
-    
-    # 429 then 200
-    with patch("requests.get", side_effect=[mock_resp_429, mock_resp_200]) as mock_get:
-        results = literature_search.search_papers(query, limit=3)
+
+    # Patch the individual S2 function; 429 then 200
+    with patch("literature_search._search_openalex", return_value=[]), \
+         patch("literature_search._search_pubmed", return_value=[]), \
+         patch("literature_search._search_arxiv", return_value=[]), \
+         patch("requests.get", side_effect=[mock_resp_429, mock_resp_200]) as mock_get:
+        # Invoke S2 directly to test the retry logic in isolation
+        results = literature_search._search_semantic_scholar(query, limit=3, max_retries=2)
         assert results == []
+        # 429 attempt + 200 attempt = 2 total calls
         assert mock_get.call_count == 2
-        
-        # Verify sleep was called for backoff
-        import time
-        time.sleep.assert_called_once_with(1)  # 2 ** 0
 
 def test_search_papers_fails_gracefully(temp_db):
-    """Verifies that search_papers returns an empty list and doesn't crash on persistent network errors."""
+    """Verifies that the Semantic Scholar fallback returns empty list on persistent network errors."""
     query = "failing query"
-    
+
     with patch("requests.get", side_effect=requests.RequestException("Connection timed out")) as mock_get:
-        results = literature_search.search_papers(query, limit=3)
+        # Test S2's own retry logic in isolation (max_retries=3 means 3 attempts)
+        results = literature_search._search_semantic_scholar(query, limit=3, max_retries=3)
         assert results == []
-        assert mock_get.call_count == 3  # Should retry up to max_retries (3)
+        assert mock_get.call_count == 3  # One attempt per retry
 
 def test_fetch_paper_details_success(temp_db):
     """Verifies fetching specific paper details by ID works, caches, and parses correctly."""

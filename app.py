@@ -993,7 +993,20 @@ if st.session_state.debate_started and not st.session_state.debate_paused and no
         st.rerun()
     except Exception as e:
         st.session_state.debate_finished = True
-        st.session_state.debate_error = str(e)
+        
+        # Format the error message to be highly friendly if it's a rate-limit/credential issue
+        err_str = str(e).lower()
+        if any(msg in err_str for msg in ["429", "rate limit", "resource_exhausted", "quota", "unauthorized", "api key", "authentication"]):
+            st.session_state.debate_error = (
+                "🔑 **Host API Keys Peak Capacity / Exhausted**\n\n"
+                "The shared free-tier keys for Groq/Gemini have hit their public rate-limits due to concurrent traffic.\n\n"
+                "👉 **To run immediately with zero delay, please add your own API key in the sidebar configuration!**\n\n"
+                "* You can create a **free Groq API Key** in 10 seconds at: [console.groq.com](https://console.groq.com/)\n"
+                "* You can create a **free Gemini API Key** in 30 seconds at: [aistudio.google.com](https://aistudio.google.com/)"
+            )
+        else:
+            st.session_state.debate_error = f"❌ **An unexpected error occurred:**\n\n{str(e)}"
+            
         st.session_state.debate_status = "Status: Error occurred"
         if not use_mock:
             global_state.release_session(st.session_state.user_session_id)

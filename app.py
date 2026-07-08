@@ -171,6 +171,27 @@ st.markdown("""
         70% { box-shadow: 0 0 0 8px rgba(16, 185, 129, 0); }
         100% { box-shadow: 0 0 0 0 rgba(16, 185, 129, 0); }
     }
+
+    @keyframes pulse-amber {
+        0% { box-shadow: 0 0 0 0 rgba(251, 191, 36, 0.5); }
+        70% { box-shadow: 0 0 0 10px rgba(251, 191, 36, 0); }
+        100% { box-shadow: 0 0 0 0 rgba(251, 191, 36, 0); }
+    }
+
+    @keyframes pulse-red {
+        0% { box-shadow: 0 0 0 0 rgba(244, 63, 94, 0.5); }
+        70% { box-shadow: 0 0 0 10px rgba(244, 63, 94, 0); }
+        100% { box-shadow: 0 0 0 0 rgba(244, 63, 94, 0); }
+    }
+
+    @keyframes border-glow-amber {
+        0%, 100% { border-color: rgba(251, 191, 36, 0.25); box-shadow: 0 0 8px rgba(251,191,36,0.05); }
+        50% { border-color: rgba(251, 191, 36, 0.55); box-shadow: 0 0 18px rgba(251,191,36,0.18); }
+    }
+
+    @keyframes spin {
+        to { transform: rotate(360deg); }
+    }
     
     .pulse-dot-active {
         width: 8px;
@@ -188,6 +209,78 @@ st.markdown("""
         border-radius: 50%;
         margin-right: 8px;
         animation: pulse 2.5s infinite;
+    }
+
+    .pulse-dot-sleeping {
+        width: 10px;
+        height: 10px;
+        background-color: #fbbf24;
+        border-radius: 50%;
+        margin-right: 8px;
+        animation: pulse-amber 1.4s infinite;
+        flex-shrink: 0;
+    }
+
+    .pulse-dot-error {
+        width: 10px;
+        height: 10px;
+        background-color: #f43f5e;
+        border-radius: 50%;
+        margin-right: 8px;
+        animation: pulse-red 1.2s infinite;
+        flex-shrink: 0;
+    }
+
+    /* Sleeping / API wait banner */
+    .sleeping-banner {
+        display: flex;
+        align-items: flex-start;
+        gap: 16px;
+        background: linear-gradient(135deg, rgba(251,191,36,0.07) 0%, rgba(8,8,10,0.6) 100%);
+        border: 1px solid rgba(251,191,36,0.2);
+        border-radius: 12px;
+        padding: 18px 22px;
+        margin-bottom: 20px;
+        animation: border-glow-amber 2.5s ease-in-out infinite;
+        backdrop-filter: blur(12px);
+    }
+
+    .sleeping-spinner {
+        width: 22px;
+        height: 22px;
+        border: 2.5px solid rgba(251,191,36,0.15);
+        border-top-color: #fbbf24;
+        border-radius: 50%;
+        animation: spin 0.9s linear infinite;
+        flex-shrink: 0;
+        margin-top: 2px;
+    }
+
+    .sleeping-title {
+        font-family: 'Outfit', sans-serif;
+        font-size: 1.0rem;
+        font-weight: 700;
+        color: #fbbf24;
+        margin-bottom: 4px;
+        letter-spacing: 0.02em;
+    }
+
+    .sleeping-body {
+        font-family: 'Plus Jakarta Sans', sans-serif;
+        font-size: 0.92rem;
+        color: #cbd5e1;
+        line-height: 1.55;
+    }
+
+    .sleeping-tip {
+        font-family: 'Fira Code', monospace;
+        font-size: 0.8rem;
+        color: #94a3b8;
+        margin-top: 8px;
+        padding: 8px 12px;
+        background: rgba(251,191,36,0.04);
+        border-left: 2px solid rgba(251,191,36,0.3);
+        border-radius: 0 6px 6px 0;
     }
 
     .status-label {
@@ -527,12 +620,32 @@ if "debate_started" not in st.session_state:
 header_placeholder = st.empty()
 st.session_state.header_placeholder = header_placeholder
 
-def update_header(status_text, is_concluded=False):
+# Sleeping / API-wait banner (rendered just below the header)
+sleeping_placeholder = st.empty()
+st.session_state.sleeping_placeholder = sleeping_placeholder
+
+def update_header(status_text, is_concluded=False, is_sleeping=False, is_error=False):
     status_class = "pulse-dot-demo" if use_mock else "pulse-dot-active"
     if is_concluded:
         dot_html = '<div class="pulse-dot-demo" style="background-color: #10b981; box-shadow: none; animation: none; width: 6px; height: 6px; border-radius: 50%; margin-right: 6px; display: inline-block;"></div>'
+        bg_color = "rgba(8, 8, 10, 0.4)"
+        border_color = "rgba(255, 255, 255, 0.05)"
+        accent_color = "#10b981"
+    elif is_sleeping:
+        dot_html = '<div class="pulse-dot-sleeping" style="display: inline-block;"></div>'
+        bg_color = "rgba(251, 191, 36, 0.06)"
+        border_color = "rgba(251, 191, 36, 0.2)"
+        accent_color = "#fbbf24"
+    elif is_error:
+        dot_html = '<div class="pulse-dot-error" style="display: inline-block;"></div>'
+        bg_color = "rgba(244, 63, 94, 0.06)"
+        border_color = "rgba(244, 63, 94, 0.2)"
+        accent_color = "#f43f5e"
     else:
         dot_html = f'<div class="{status_class}" style="width: 6px; height: 6px; border-radius: 50%; margin-right: 6px; display: inline-block;"></div>'
+        bg_color = "rgba(8, 8, 10, 0.4)"
+        border_color = "rgba(255, 255, 255, 0.05)"
+        accent_color = "#10b981"
         
     topic_str = topic if 'topic' in globals() else "Olfactory crypt neurons"
     if len(topic_str) > 48:
@@ -541,18 +654,40 @@ def update_header(status_text, is_concluded=False):
         topic_clipped = topic_str
 
     header_placeholder.markdown(f"""
-    <div class="arena-header-container" style="display: flex; justify-content: space-between; align-items: center; background: rgba(8, 8, 10, 0.4); border: 1px solid rgba(255, 255, 255, 0.05); padding: 8px 16px; border-radius: 8px; font-family: 'Fira Code', monospace; font-size: 0.78rem; margin-bottom: 25px; letter-spacing: 0.05em; color: #94a3b8; width: 100%;">
+    <div class="arena-header-container" style="display: flex; justify-content: space-between; align-items: center; background: {bg_color}; border: 1px solid {border_color}; padding: 8px 16px; border-radius: 8px; font-family: 'Fira Code', monospace; font-size: 0.78rem; margin-bottom: 25px; letter-spacing: 0.05em; color: #94a3b8; width: 100%; transition: all 0.4s ease;">
         <div class="arena-header-topic" style="display: flex; align-items: center; gap: 10px; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; max-width: 75%;">
-            <span style="color: #10b981; font-weight: 700;">◆ DEBATE ARENA</span>
+            <span style="color: {accent_color}; font-weight: 700;">◆ DEBATE ARENA</span>
             <span style="color: rgba(255,255,255,0.08);">|</span>
             <span style="color: #cbd5e1; text-transform: uppercase;">Topic: "{topic_clipped}"</span>
         </div>
-        <div class="arena-header-status" style="display: flex; align-items: center; gap: 4px; shrink: 0;">
+        <div class="arena-header-status" style="display: flex; align-items: center; gap: 4px; flex-shrink: 0;">
             {dot_html}
-            <span style="color: #e2e8f0; font-weight: 600; text-transform: uppercase; font-size: 0.72rem;">{status_text}</span>
+            <span style="color: {accent_color}; font-weight: 600; text-transform: uppercase; font-size: 0.72rem;">{status_text}</span>
         </div>
     </div>
     """, unsafe_allow_html=True)
+
+def update_sleeping_banner(message: str, provider: str = "", countdown: int = 0, clear: bool = False):
+    """Shows or hides the amber 'sleeping / waiting for API' banner below the header."""
+    if clear:
+        sleeping_placeholder.empty()
+        return
+    countdown_text = f" Retrying in <strong style='color:#fbbf24;'>{countdown}s</strong>..." if countdown > 0 else ""
+    provider_badge = f"<span style='background:rgba(251,191,36,0.1);color:#fbbf24;border:1px solid rgba(251,191,36,0.25);padding:1px 8px;border-radius:4px;font-size:0.75rem;font-weight:700;font-family:Fira Code,monospace;margin-left:6px;'>{provider.upper()}</span>" if provider else ""
+    sleeping_placeholder.markdown(f"""
+    <div class="sleeping-banner">
+        <div class="sleeping-spinner"></div>
+        <div style="flex: 1; min-width: 0;">
+            <div class="sleeping-title">⏳ System Sleeping — Please Wait{provider_badge}</div>
+            <div class="sleeping-body">{message}{countdown_text}</div>
+            <div class="sleeping-tip">💡 Tip: Add your own free API key in the sidebar to bypass all rate limits and get instant responses.</div>
+        </div>
+    </div>
+    """, unsafe_allow_html=True)
+
+# Store helpers in session state so llm_client can call them
+st.session_state.update_sleeping_banner = update_sleeping_banner
+st.session_state.update_header = update_header
 
 # Initial draw of header
 update_header(st.session_state.debate_status)
@@ -990,6 +1125,7 @@ if st.session_state.debate_started and not st.session_state.debate_paused and no
         st.session_state.debate_status = "Status: Debate Concluded"
         if not use_mock:
             global_state.release_session(st.session_state.user_session_id)
+        sleeping_placeholder.empty()  # Clear any sleeping banner
         update_header(st.session_state.debate_status, is_concluded=True)
         st.rerun()
     except Exception as e:
@@ -1011,6 +1147,7 @@ if st.session_state.debate_started and not st.session_state.debate_paused and no
         st.session_state.debate_status = "Status: Error occurred"
         if not use_mock:
             global_state.release_session(st.session_state.user_session_id)
+        sleeping_placeholder.empty()  # Clear any sleeping banner
         update_header(st.session_state.debate_status, is_concluded=True)
         st.rerun()
 

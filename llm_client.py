@@ -106,26 +106,55 @@ def call_llm(system_prompt: str, user_prompt: str, max_tokens: int = 3000) -> st
                 if not is_retryable:
                     # Developer errors / bad requests: fail fast immediately
                     raise e
-
-                def _show_onscreen_fallback(provider_name, target_provider, reason_msg):
+                def _update_screen_status(provider_name, action_msg, is_alert=True, countdown=0):
                     try:
                         import streamlit as st
-                        status_msg = f"Status: {provider_name.upper()} {reason_msg}. Swapping to {target_provider.upper()}..."
+                        status_msg = f"Status: {provider_name.upper()} {action_msg}"
                         st.session_state.debate_status = status_msg
                         if "header_placeholder" in st.session_state:
+                            bg_color = "rgba(244, 63, 94, 0.08)" if is_alert else "rgba(8, 8, 10, 0.4)"
+                            border_color = "rgba(244, 63, 94, 0.25)" if is_alert else "rgba(255, 255, 255, 0.05)"
+                            text_color = "#fb7185" if is_alert else "#94a3b8"
+                            dot_color = "#f43f5e" if is_alert else "#10b981"
                             st.session_state.header_placeholder.markdown(f"""
-                            <div class="arena-header-container" style="display: flex; justify-content: space-between; align-items: center; background: rgba(244, 63, 94, 0.08); border: 1px solid rgba(244, 63, 94, 0.25); padding: 8px 16px; border-radius: 8px; font-family: 'Fira Code', monospace; font-size: 0.78rem; margin-bottom: 25px; letter-spacing: 0.05em; color: #fb7185; width: 100%;">
+                            <div class="arena-header-container" style="display: flex; justify-content: space-between; align-items: center; background: {bg_color}; border: 1px solid {border_color}; padding: 8px 16px; border-radius: 8px; font-family: 'Fira Code', monospace; font-size: 0.78rem; margin-bottom: 25px; letter-spacing: 0.05em; color: {text_color}; width: 100%;">
                                 <div class="arena-header-topic" style="display: flex; align-items: center; gap: 10px; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; max-width: 75%;">
-                                    <span style="color: #f43f5e; font-weight: 700;">◆ DEBATE ARENA</span>
+                                    <span style="color: {dot_color}; font-weight: 700;">◆ DEBATE ARENA</span>
                                     <span style="color: rgba(255,255,255,0.08);">|</span>
                                     <span style="color: #cbd5e1; text-transform: uppercase;">Host Quota Fallback Active</span>
                                 </div>
                                 <div class="arena-header-status" style="display: flex; align-items: center; gap: 4px; shrink: 0;">
-                                    <div style="background-color: #f43f5e; width: 6px; height: 6px; border-radius: 50%; margin-right: 6px; display: inline-block;"></div>
-                                    <span style="color: #f43f5e; font-weight: 600; text-transform: uppercase; font-size: 0.72rem;">{status_msg}</span>
+                                    <div style="background-color: {dot_color}; width: 6px; height: 6px; border-radius: 50%; margin-right: 6px; display: inline-block;"></div>
+                                    <span style="color: {dot_color}; font-weight: 600; text-transform: uppercase; font-size: 0.72rem;">{status_msg}</span>
                                 </div>
                             </div>
                             """, unsafe_allow_html=True)
+                        # Also update the sleeping banner
+                        if "sleeping_placeholder" in st.session_state:
+                            if countdown > 0:
+                                st.session_state.sleeping_placeholder.markdown(f"""
+                            <div class="sleeping-banner">
+                                <div class="sleeping-spinner"></div>
+                                <div style="flex: 1; min-width: 0;">
+                                    <div class="sleeping-title">⏳ System Sleeping — Please Wait <span style='background:rgba(251,191,36,0.1);color:#fbbf24;border:1px solid rgba(251,191,36,0.25);padding:1px 8px;border-radius:4px;font-size:0.75rem;font-weight:700;font-family:Fira Code,monospace;margin-left:6px;'>{provider_name.upper()}</span></div>
+                                    <div class="sleeping-body">The API is currently rate-limited. Retrying in <strong style='color:#fbbf24;'>{countdown}s</strong>... This is normal during peak traffic.</div>
+                                    <div class="sleeping-tip">💡 Tip: Add your own free API key in the sidebar to bypass all rate limits and get instant responses.</div>
+                                </div>
+                            </div>
+                            """, unsafe_allow_html=True)
+                            elif is_alert:
+                                st.session_state.sleeping_placeholder.markdown(f"""
+                            <div class="sleeping-banner">
+                                <div class="sleeping-spinner"></div>
+                                <div style="flex: 1; min-width: 0;">
+                                    <div class="sleeping-title">⏳ System Sleeping — Please Wait <span style='background:rgba(251,191,36,0.1);color:#fbbf24;border:1px solid rgba(251,191,36,0.25);padding:1px 8px;border-radius:4px;font-size:0.75rem;font-weight:700;font-family:Fira Code,monospace;margin-left:6px;'>{provider_name.upper()}</span></div>
+                                    <div class="sleeping-body">{action_msg} — waiting for the next available slot.</div>
+                                    <div class="sleeping-tip">💡 Tip: Add your own free API key in the sidebar to bypass all rate limits and get instant responses.</div>
+                                </div>
+                            </div>
+                            """, unsafe_allow_html=True)
+                            else:
+                                st.session_state.sleeping_placeholder.empty()
                     except Exception:
                         pass
 
@@ -139,7 +168,7 @@ def call_llm(system_prompt: str, user_prompt: str, max_tokens: int = 3000) -> st
                     if len(available_providers) > 1 and provider != available_providers[-1]:
                         next_provider = available_providers[available_providers.index(provider) + 1]
                         print(f"[llm_client] Quota exhausted on {provider}, triggering fallback to {next_provider}...")
-                        _show_onscreen_fallback(provider, next_provider, "daily limit reached")
+                        _update_screen_status(provider, f"daily limit reached. Swapping to {next_provider.upper()}...")
                         break  # Break inner loop to try next provider immediately
                     else:
                         raise e
@@ -156,16 +185,24 @@ def call_llm(system_prompt: str, user_prompt: str, max_tokens: int = 3000) -> st
                         # For backup providers (like Gemini), fail-fast instantly without sleeping
                         next_provider = available_providers[available_providers.index(provider) + 1]
                         print(f"[llm_client] Rate limit hit on {provider}, triggering instant fallback to {next_provider}...")
-                        _show_onscreen_fallback(provider, next_provider, "rate limited")
+                        _update_screen_status(provider, f"rate limited. Swapping to {next_provider.upper()}...")
                         break  # Break inner loop to try next provider immediately
-
+ 
                 if attempt < max_retries - 1:
                     wait_time = (attempt + 1) * 3
                     delay_match = re.search(r"Please retry in (\d+\.?\d*)s", err_str, re.IGNORECASE)
                     if delay_match:
                         wait_time = float(delay_match.group(1)) + 1.0
                     print(f"[llm_client] {provider} rate limit/error, retrying in {wait_time:.1f}s... ({attempt+1}/{max_retries})")
-                    time.sleep(wait_time)
+                    
+                    # Live countdown on screen to show the user it is working
+                    for remaining in range(int(wait_time), 0, -1):
+                        _update_screen_status(provider, f"rate limited. Retrying in {remaining}s... ({attempt+1}/{max_retries})", countdown=remaining)
+                        time.sleep(1.0)
+                    
+                    fractional = wait_time - int(wait_time)
+                    if fractional > 0:
+                        time.sleep(fractional)
                 else:
                     # Exhausted retries for this provider: try falling back to next provider
                     if len(available_providers) > 1 and provider != available_providers[-1]:

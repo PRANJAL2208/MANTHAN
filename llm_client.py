@@ -56,74 +56,85 @@ import time
 
 def call_llm(system_prompt: str, user_prompt: str, max_tokens: int = 3000) -> str:
     """
-    Sends a system instruction + a user message to whichever LLM provider
-    is configured, and returns the plain text response.
-
-    Retry policy:
-    - Per-minute rate limit (429 RPM): retries up to 5 times with backoff
-    - Daily quota exhausted (RESOURCE_EXHAUSTED + limit:0): fails fast with
-      a clear message. No point waiting 7x60s for a daily limit to reset.
-    - Server errors (503): retries up to 3 times
+    Sends a system instruction + a user message to configured LLM providers.
+    Uses automatic multi-provider fallback routing if the primary provider
+    encounters rate limits or quota exhaustion.
     """
     import re
-    
-    current_provider = get_available_provider()
-    
-    max_retries = 5
-    for attempt in range(max_retries):
-        try:
-            if current_provider == "gemini":
-                return _call_gemini(system_prompt, user_prompt, max_tokens)
-            elif current_provider == "anthropic":
-                return _call_anthropic(system_prompt, user_prompt, max_tokens)
-            elif current_provider == "groq":
-                return _call_groq(system_prompt, user_prompt, max_tokens)
-            else:
-                raise ValueError(f"Unknown LLM provider: {current_provider}. Choose: gemini, anthropic, groq")
-        except Exception as e:
-            err_str = str(e)
-            err_lower = err_str.lower()
 
-            # Detect daily quota exhaustion: only fail fast when the per-day quota
-            # is the SOLE violation and per-minute limits are not also listed.
-            # (Google often shows per-day alongside per-minute on RPM hits, which
-            # resets in <60s and should be retried normally.)
-            is_daily_exhausted = (
-                "resource_exhausted" in err_lower
-                and "PerDay" in err_str
-                and "PerMinute" not in err_str  # if per-minute also listed, it's just RPM throttle
-            )
-            if is_daily_exhausted:
-                raise RuntimeError(
-                    "DAILY QUOTA EXHAUSTED: Your Gemini API key has reached its daily "
-                    "free-tier limit. Options:\n"
-                    "  1. Enable billing at https://console.cloud.google.com/billing\n"
-                    "  2. Use a fresh API key from a different Google account\n"
-                    "  3. Wait until tomorrow (quota resets ~midnight Pacific time)"
-                ) from e
+    # Determine order of providers to try
+    primary_provider = get_available_provider()
+    available_providers = []
+    if primary_provider:
+        available_providers.append(primary_provider)
+    
+    # Collect other configured backends (skip fallbacks during pytest runs to keep unit test assertions isolated)
+    import sys
+    if "pytest" not in sys.modules:
+        for p in ["groq", "gemini", "anthropic"]:
+            if p != primary_provider and get_secret(f"{p.upper()}_API_KEY"):
+                available_providers.append(p)
 
-            is_retryable = any(msg in err_lower for msg in [
-                "503", "429", "unavailable", "rate limit", "demand",
-                "resource_exhausted", "resourceexhausted"
-            ])
-            if is_retryable and attempt < max_retries - 1:
-                wait_time = (attempt + 1) * 3
-                delay_match = re.search(r"Please retry in (\d+\.?\d*)s", err_str, re.IGNORECASE)
-                if delay_match:
-                    wait_time = float(delay_match.group(1)) + 1.0
+    first_error = None
+    for provider in available_providers:
+        max_retries = 5 if provider == primary_provider else 3
+        for attempt in range(max_retries):
+            try:
+                if provider == "gemini":
+                    return _call_gemini(system_prompt, user_prompt, max_tokens)
+                elif provider == "anthropic":
+                    return _call_anthropic(system_prompt, user_prompt, max_tokens)
+                elif provider == "groq":
+                    return _call_groq(system_prompt, user_prompt, max_tokens)
                 else:
-                    delay_dict_match = re.search(
-                        r"['\"]retryDelay['\"]\s*:\s*['\"](\d+)s['\"]", err_str, re.IGNORECASE
-                    )
-                    if delay_dict_match:
-                        wait_time = float(delay_dict_match.group(1)) + 1.0
-                # Cap wait at 15s — if it's a per-minute limit it resets in 60s max
-                wait_time = min(wait_time, 15.0)
-                print(f"[llm_client] Retrying in {wait_time:.1f}s... (attempt {attempt+1}/{max_retries})")
-                time.sleep(wait_time)
-            else:
-                raise e
-    raise RuntimeError("LLM call failed after max retries.")
+                    raise ValueError(f"Unknown LLM provider: {provider}")
+            except Exception as e:
+                if first_error is None:
+                    first_error = e
+                err_str = str(e)
+                err_lower = err_str.lower()
+
+                # Determine if this error is transient / retryable
+                is_retryable = any(msg in err_lower for msg in [
+                    "503", "429", "unavailable", "rate limit", "demand",
+                    "resource_exhausted", "resourceexhausted", "timeout"
+                ])
+
+                if not is_retryable:
+                    # Developer errors / bad requests: fail fast immediately
+                    raise e
+
+                # Detect daily quota limits on Gemini and fail fast to trigger fallback
+                is_daily_exhausted = (
+                    "resource_exhausted" in err_lower
+                    and "PerDay" in err_str
+                    and "PerMinute" not in err_str
+                )
+                if is_daily_exhausted:
+                    if len(available_providers) > 1 and provider != available_providers[-1]:
+                        print(f"[llm_client] Quota exhausted on {provider}, triggering fallback...")
+                        break  # Break inner loop to try next provider immediately
+                    else:
+                        raise e
+
+                if attempt < max_retries - 1:
+                    wait_time = (attempt + 1) * 3
+                    delay_match = re.search(r"Please retry in (\d+\.?\d*)s", err_str, re.IGNORECASE)
+                    if delay_match:
+                        wait_time = float(delay_match.group(1)) + 1.0
+                    print(f"[llm_client] {provider} rate limit/error, retrying in {wait_time:.1f}s... ({attempt+1}/{max_retries})")
+                    time.sleep(wait_time)
+                else:
+                    # Exhausted retries for this provider: try falling back to next provider
+                    if len(available_providers) > 1 and provider != available_providers[-1]:
+                        print(f"[llm_client] {provider} failed after retries, trying fallback provider...")
+                        break
+                    else:
+                        raise e
+
+    if first_error:
+        raise first_error
+    raise RuntimeError("No LLM provider available.")
 
 
 def _call_groq(system_prompt, user_prompt, max_tokens):

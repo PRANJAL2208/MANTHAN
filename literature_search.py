@@ -113,7 +113,7 @@ def set_api_key(key: str):
 def _preprocess_query(query: str) -> str:
     """
     Strip question words and filler from conversational queries.
-    'is coffee good for us?' -> 'coffee health effects'
+    'is coffee good for us?' -> 'coffee'
     Improves relevance for natural-language topic inputs.
     """
     question_words = {
@@ -123,11 +123,8 @@ def _preprocess_query(query: str) -> str:
         'we', 'our',
     }
     words = query.lower().strip('?').split()
-    keywords = [w for w in words if w not in question_words and len(w) > 2]
+    keywords = [w for w in words if w not in question_words and len(w) >= 2]
     result = ' '.join(keywords) if keywords else query
-    # If result is a single generic noun, add 'health effects' for context
-    if len(keywords) == 1:
-        result = f"{result} health effects"
     if result != query.lower().strip('?'):
         print(f"[literature_search] Query: '{query}' -> '{result}'")
     return result

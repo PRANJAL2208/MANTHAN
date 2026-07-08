@@ -10,8 +10,40 @@ Interactive & Cinematic UI:
 """
 
 import time
+import uuid
+import threading
 import streamlit as st
 from debate_engine import run_debate_stream
+
+# Global state shared across all users/threads to track active runs
+@st.cache_resource
+class GlobalState:
+    def __init__(self):
+        self.active_sessions = {}  # {session_id: last_active_timestamp}
+        self.lock = threading.Lock()
+
+    def update_activity(self, session_id):
+        with self.lock:
+            self.active_sessions[session_id] = time.time()
+
+    def release_session(self, session_id):
+        with self.lock:
+            if session_id in self.active_sessions:
+                del self.active_sessions[session_id]
+
+    def is_busy(self, current_session_id):
+        # Clean up stale sessions (older than 20 seconds)
+        now = time.time()
+        with self.lock:
+            stale_keys = [k for k, t in self.active_sessions.items() if now - t > 20.0]
+            for k in stale_keys:
+                del self.active_sessions[k]
+            
+            # Busy if any other session is active
+            other_active = [k for k in self.active_sessions.keys() if k != current_session_id]
+            return len(other_active) >= 1
+
+global_state = GlobalState()
 
 st.set_page_config(page_title="Scientific Arena: Multi-Agent Debate", layout="wide", initial_sidebar_state="expanded")
 st.logo("docs/logo_wide.png", icon_image="docs/logo.png")
@@ -442,11 +474,18 @@ with st.sidebar:
 
     # Reset button
     if st.button("Reset Arena"):
+        if "user_session_id" in st.session_state:
+            global_state.release_session(st.session_state.user_session_id)
         for key in list(st.session_state.keys()):
             del st.session_state[key]
         st.rerun()
 
 # Initialize Session State Variables
+if "user_session_id" not in st.session_state:
+    st.session_state.user_session_id = str(uuid.uuid4())
+if "session_run_count" not in st.session_state:
+    st.session_state.session_run_count = 0
+
 if "debate_started" not in st.session_state:
     st.session_state.debate_started = False
     st.session_state.debate_paused = False
@@ -781,6 +820,34 @@ def render_bibliography():
 
 # Main trigger execution
 if run_clicked and not st.session_state.debate_started:
+    # 1. Enforce Per-Session User Limit (only in active live mode, bypass in sandbox mock mode)
+    if not use_mock and st.session_state.session_run_count >= 3:
+        st.sidebar.error(
+            "🔒 **Session Limit Reached:** You have run 3 live debates in this session. "
+            "To prevent API rate-limit exhaustion, please clone the repository to run unlimited debates locally! "
+            "[GitHub Repository](https://github.com/PRANJAL2208/MANTHAN)"
+        )
+        st.stop()
+
+    # 2. Enforce Global Concurrency Lock (Only 1 active debate at a time in live mode)
+    can_start = False
+    if not use_mock:
+        if global_state.is_busy(st.session_state.user_session_id):
+            can_start = False
+        else:
+            global_state.update_activity(st.session_state.user_session_id)
+            can_start = True
+    else:
+        can_start = True
+
+    if not can_start:
+        st.sidebar.warning(
+            "⏳ **System Busy:** Another visitor is currently running a debate. "
+            "To prevent API rate-limit crashes, only 1 debate can run at a time. "
+            "Please wait ~60 seconds for their debate to complete, or run it locally!"
+        )
+        st.stop()
+
     st.session_state.debate_started = True
     st.session_state.debate_paused = False
     st.session_state.debate_finished = False
@@ -790,6 +857,8 @@ if run_clicked and not st.session_state.debate_started:
     st.session_state.debate_verdict = ""
     st.session_state.adk_planner_decision = None
     st.session_state.debate_stream = run_debate_stream(topic, rounds=rounds, use_mock=use_mock, use_adk_planner=enable_adk_planner)
+    if not use_mock:
+        st.session_state.session_run_count += 1
     st.rerun()
 
 # Render Static Layout
@@ -816,6 +885,10 @@ else:
 
 # Generator Consuming Loop
 if st.session_state.debate_started and not st.session_state.debate_paused and not st.session_state.debate_finished:
+    # Update global activity tracking to hold the lock
+    if not use_mock:
+        global_state.update_activity(st.session_state.user_session_id)
+
     # Check if we are resuming from a saved next event
     initial_event = None
     if "next_event" in st.session_state and st.session_state.next_event is not None:
@@ -877,6 +950,8 @@ if st.session_state.debate_started and not st.session_state.debate_paused and no
     except StopIteration:
         st.session_state.debate_finished = True
         st.session_state.debate_status = "Status: Debate Concluded"
+        if not use_mock:
+            global_state.release_session(st.session_state.user_session_id)
         update_header(st.session_state.debate_status, is_concluded=True)
         st.rerun()
 

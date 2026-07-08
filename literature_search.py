@@ -465,32 +465,31 @@ def search_papers(query: str, limit: int = 5, max_retries: int = 5) -> list[dict
     # Preprocess: strip question words for better API relevance
     search_query = _preprocess_query(query)
 
-    all_papers: list[dict] = []
+    from concurrent.futures import ThreadPoolExecutor
 
-    # 1. OpenAlex -- primary, covers everything
     t0 = time.time()
-    openalex_res = _search_openalex(search_query, limit=limit)
-    print(f"[{time.strftime('%H:%M:%S')}] [Search] OpenAlex took {time.time()-t0:.1f}s")
+    # Execute primary sources in parallel to drastically minimize query latency
+    with ThreadPoolExecutor(max_workers=3) as executor:
+        future_openalex = executor.submit(_search_openalex, search_query, limit)
+        future_pubmed = executor.submit(_search_pubmed, search_query, max(3, limit // 2))
+        future_arxiv = executor.submit(_search_arxiv, search_query, max(3, limit // 2))
+
+        openalex_res = future_openalex.result()
+        pubmed_res = future_pubmed.result()
+        arxiv_res = future_arxiv.result()
+
+    print(f"[{time.strftime('%H:%M:%S')}] [Search] Parallel fetch took {time.time()-t0:.1f}s")
+
+    all_papers: list[dict] = []
     all_papers.extend(openalex_res)
-
-    # 2. PubMed -- specialist for health/biology
-    t1 = time.time()
-    pubmed_res = _search_pubmed(search_query, limit=max(3, limit // 2))
-    print(f"[{time.strftime('%H:%M:%S')}] [Search] PubMed took {time.time()-t1:.1f}s")
     all_papers.extend(pubmed_res)
+    all_papers.extend(arxiv_res)
 
-    # 3. arXiv -- only if still short on results
-    if len(all_papers) < limit:
-        t2 = time.time()
-        arxiv_res = _search_arxiv(search_query, limit=max(3, limit // 2))
-        print(f"[{time.strftime('%H:%M:%S')}] [Search] arXiv took {time.time()-t2:.1f}s")
-        all_papers.extend(arxiv_res)
-
-    # 4. Semantic Scholar — final fallback
+    # 4. Semantic Scholar — final fallback if other sources yield < 2 papers
     if len(all_papers) < 2:
         t3 = time.time()
         s2_res = _search_semantic_scholar(query, limit=limit)
-        print(f"[{time.strftime('%H:%M:%S')}] [Search] Semantic Scholar took {time.time()-t3:.1f}s")
+        print(f"[{time.strftime('%H:%M:%S')}] [Search] Semantic Scholar fallback took {time.time()-t3:.1f}s")
         all_papers.extend(s2_res)
 
     # Merge, deduplicate, rank (pass keywords for title-relevance scoring)

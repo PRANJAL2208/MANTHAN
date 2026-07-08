@@ -120,6 +120,14 @@ def call_llm(system_prompt: str, user_prompt: str, max_tokens: int = 3000) -> st
                     else:
                         raise e
 
+                # Trigger instant fallback on rate limit errors (429 / RPM) if backups are available
+                is_rate_limit = any(msg in err_lower for msg in [
+                    "429", "rate limit", "resource_exhausted", "resourceexhausted"
+                ])
+                if is_rate_limit and len(available_providers) > 1 and provider != available_providers[-1]:
+                    print(f"[llm_client] Rate limit hit on {provider}, triggering instant fallback...")
+                    break  # Break inner loop to try next provider immediately
+
                 if attempt < max_retries - 1:
                     wait_time = (attempt + 1) * 3
                     delay_match = re.search(r"Please retry in (\d+\.?\d*)s", err_str, re.IGNORECASE)

@@ -520,6 +520,7 @@ if "debate_started" not in st.session_state:
     st.session_state.debate_verdict = ""
     st.session_state.debate_challenge = ""
     st.session_state.adk_planner_decision = None
+    st.session_state.debate_error = None
 
 # Sleek Top Header Bar Function
 header_placeholder = st.empty()
@@ -842,7 +843,7 @@ def render_bibliography():
             """, unsafe_allow_html=True)
 
 # Main trigger execution
-if run_clicked and not st.session_state.debate_started:
+if run_clicked and (not st.session_state.debate_started or st.session_state.debate_finished):
     # 1. Enforce Per-Session User Limit (only in active live mode, bypass in sandbox mock mode)
     if not use_mock and st.session_state.session_run_count >= 3:
         st.sidebar.error(
@@ -879,6 +880,7 @@ if run_clicked and not st.session_state.debate_started:
     st.session_state.debate_hypotheses = {}
     st.session_state.debate_verdict = ""
     st.session_state.adk_planner_decision = None
+    st.session_state.debate_error = None
     st.session_state.debate_stream = run_debate_stream(topic, rounds=rounds, use_mock=use_mock, use_adk_planner=enable_adk_planner)
     if not use_mock:
         st.session_state.session_run_count += 1
@@ -888,6 +890,8 @@ if run_clicked and not st.session_state.debate_started:
 if st.session_state.debate_started:
     render_tug_of_war()
     render_stances()
+    if st.session_state.get("debate_error"):
+        st.error(f"❌ **An error occurred during execution:**\n\n{st.session_state.debate_error}")
 else:
     st.markdown("""
     <div style="text-align: center; margin-top: 8vh; padding: 20px;">
@@ -973,6 +977,14 @@ if st.session_state.debate_started and not st.session_state.debate_paused and no
     except StopIteration:
         st.session_state.debate_finished = True
         st.session_state.debate_status = "Status: Debate Concluded"
+        if not use_mock:
+            global_state.release_session(st.session_state.user_session_id)
+        update_header(st.session_state.debate_status, is_concluded=True)
+        st.rerun()
+    except Exception as e:
+        st.session_state.debate_finished = True
+        st.session_state.debate_error = str(e)
+        st.session_state.debate_status = "Status: Error occurred"
         if not use_mock:
             global_state.release_session(st.session_state.user_session_id)
         update_header(st.session_state.debate_status, is_concluded=True)

@@ -615,6 +615,7 @@ if "debate_started" not in st.session_state:
     st.session_state.adk_planner_decision = None
     st.session_state.debate_error = None
     st.session_state.system_busy_warning = None
+    st.session_state.debate_challenge_options = None  # Generated dynamically at intermission
 
 # Sleek Top Header Bar Function
 header_placeholder = st.empty()
@@ -1027,6 +1028,7 @@ if run_clicked and (not st.session_state.debate_started or st.session_state.deba
     st.session_state.debate_verdict = ""
     st.session_state.adk_planner_decision = None
     st.session_state.debate_error = None
+    st.session_state.debate_challenge_options = None  # Reset so new options are generated
     st.session_state.debate_stream = run_debate_stream(topic, rounds=rounds, use_mock=use_mock, use_adk_planner=enable_adk_planner)
     if not use_mock:
         st.session_state.session_run_count += 1
@@ -1165,19 +1167,62 @@ if st.session_state.debate_paused:
         <h3 style="color: #eab308; margin-top: 0; font-family: 'Outfit', sans-serif; font-size: 1.3rem;">💡 INTERMISSION: DIRECT CROSS-EXAMINATION</h3>
         <p style="font-size: 0.95rem; color: #cbd5e1; line-height: 1.5; margin: 0;">
             The Judge has paused the debate after the opening arguments. As the Judge's assistant, 
-            you can now **inject a cross-examination challenge**. Select a pre-defined directive 
+            you can now <strong>inject a cross-examination challenge</strong>. Select a generated directive 
             or type your own to focus the advocates' rebuttals.
         </p>
     </div>
     """, unsafe_allow_html=True)
-    
-    challenge_options = [
-        "Challenge Advocate A on Teleost Fish translation limits (animal vs human)",
-        "Challenge Advocate B on Stochastic wiring guidance molecule variance",
-        "Direct Advocates to address clinical relevance and medical translation",
-        "Custom Directive (type below)"
-    ]
-    
+
+    # Generate topic-specific challenge options if not yet done
+    if st.session_state.debate_challenge_options is None:
+        hyp_a = st.session_state.debate_hypotheses.get("Advocate A", {}).get("hypothesis", "")
+        hyp_b = st.session_state.debate_hypotheses.get("Advocate B", {}).get("hypothesis", "")
+        turn_snippets = " | ".join(
+            f"{t['speaker']}: {t['text'][:200]}" for t in st.session_state.debate_turns[:2]
+        )
+
+        with st.spinner("⏳ Generating challenge directives for this debate..."):
+            try:
+                from llm_client import call_llm
+                raw = call_llm(
+                    system_prompt=(
+                        "You are an expert scientific debate moderator. "
+                        "Your job is to generate exactly 3 sharp, specific cross-examination challenge directives "
+                        "for the advocates based on the debate context provided. "
+                        "Each challenge should probe a real weakness, gap, or translation limitation in one of the arguments. "
+                        "Output ONLY a numbered list of 3 items, one per line, no preamble. "
+                        "Each item must be a single sentence starting with an action word like \'Challenge\', \'Direct\', \'Press\', \'Probe\', or \'Ask\'."
+                    ),
+                    user_prompt=(
+                        f"Scientific Topic: {topic}\n"
+                        f"Advocate A Hypothesis: {hyp_a}\n"
+                        f"Advocate B Hypothesis: {hyp_b}\n"
+                        f"Opening Arguments (excerpt): {turn_snippets}\n\n"
+                        "Generate 3 targeted cross-examination directives:"
+                    ),
+                    max_tokens=300,
+                )
+                # Parse the numbered list response
+                lines = [l.strip() for l in raw.strip().split("\n") if l.strip()]
+                options = []
+                for line in lines:
+                    # Strip leading number/dot/paren (e.g. "1.", "1)", "1 -")
+                    cleaned = line.lstrip("0123456789").lstrip(".)- ").strip()
+                    if cleaned:
+                        options.append(cleaned)
+                options = options[:3]  # Take at most 3
+                if len(options) < 3:
+                    raise ValueError("Fewer than 3 options parsed")
+                st.session_state.debate_challenge_options = options
+            except Exception:
+                # Graceful fallback: generic but topic-aware challenges
+                st.session_state.debate_challenge_options = [
+                    f"Challenge Advocate A on the limitations of their evidence for: {hyp_a[:80]}...",
+                    f"Challenge Advocate B on the counterexamples to their position: {hyp_b[:80]}...",
+                    f"Direct both Advocates to address the clinical or real-world implications of the topic: {topic[:60]}...",
+                ]
+
+    challenge_options = st.session_state.debate_challenge_options + ["Custom Directive (type below)"]
     selected_option = st.radio("Select Cross-Examination Directive:", challenge_options)
     
     custom_input = ""

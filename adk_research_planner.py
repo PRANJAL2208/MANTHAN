@@ -58,7 +58,12 @@ from google.genai import types as genai_types
 
 from literature_search import search_papers, format_papers_for_prompt
 
-PLANNER_MODEL = "gemini-3.5-flash"
+# Model priority list: try each in order when quota/rate-limit is hit
+PLANNER_MODELS = [
+    "gemini-2.5-flash",   # Best quality, try first
+    "gemini-2.0-flash",   # Fallback
+    "gemini-1.5-flash",   # Last resort
+]
 PLANNER_APP_NAME = "manthan_research_planner"
 
 
@@ -77,13 +82,15 @@ def _search_literature_tool(query: str, limit: int = 3) -> str:
     return format_papers_for_prompt(papers)
 
 
-def build_research_planner_agent() -> LlmAgent:
+def build_research_planner_agent(model: str = None) -> LlmAgent:
     """Constructs the ADK LlmAgent responsible for deciding whether the
     debate has enough evidence coverage to reach a defensible verdict,
     or whether it should fetch more literature first."""
+    if model is None:
+        model = PLANNER_MODELS[0]
     return LlmAgent(
         name="research_planner",
-        model=PLANNER_MODEL,
+        model=model,
         description=(
             "Decides whether a scientific hypothesis debate has enough "
             "retrieved literature to reach a confident verdict, or whether "
@@ -130,11 +137,13 @@ def _extract_json_decision(text: str) -> dict:
 
 
 async def _run_planner_async(
-    question: str, hyp_a: str, hyp_b: str, coverage_summary: str
+    question: str, hyp_a: str, hyp_b: str, coverage_summary: str, model: str = None
 ) -> dict:
     """Drives the ADK agent end-to-end through a real Runner + Session,
     and returns the parsed decision dict."""
-    agent = build_research_planner_agent()
+    if model is None:
+        model = PLANNER_MODELS[0]
+    agent = build_research_planner_agent(model=model)
     runner = InMemoryRunner(agent=agent, app_name=PLANNER_APP_NAME)
 
     session = await runner.session_service.create_session(
@@ -178,8 +187,51 @@ def plan_research(question: str, hyp_a: str, hyp_b: str, coverage_summary: str) 
           "reasoning": str,
           "query_used": str | None,
         }
+
+    Retries across model tiers on 429 (quota exhausted) and 503 (transient
+    server errors) with exponential backoff. Never raises — returns a safe
+    fallback dict if all models are exhausted so the debate can continue.
     """
-    return asyncio.run(_run_planner_async(question, hyp_a, hyp_b, coverage_summary))
+    import time
+
+    last_error = None
+    for model in PLANNER_MODELS:
+        for attempt in range(3):  # Up to 3 attempts per model
+            try:
+                result = asyncio.run(_run_planner_async(question, hyp_a, hyp_b, coverage_summary, model=model))
+                return result
+            except Exception as e:
+                last_error = e
+                err_str = str(e).lower()
+
+                is_quota = any(k in err_str for k in ["429", "resource_exhausted", "quota"])
+                is_transient = any(k in err_str for k in ["503", "unavailable", "timeout", "502"])
+
+                if is_quota:
+                    # Quota exhausted on this model → try next model immediately
+                    print(f"[adk_planner] Quota exhausted on {model}, trying next model...")
+                    break  # break inner retry loop, move to next model
+                elif is_transient:
+                    # Transient error → wait and retry same model
+                    wait = (attempt + 1) * 5  # 5s, 10s, 15s
+                    print(f"[adk_planner] Transient error on {model} (attempt {attempt+1}/3), retrying in {wait}s...")
+                    time.sleep(wait)
+                else:
+                    # Non-retryable error (bad prompt, auth issue, etc.)
+                    print(f"[adk_planner] Non-retryable error on {model}: {e}")
+                    break
+
+    # All models and retries exhausted — return a graceful fallback so the debate continues
+    error_summary = str(last_error)[:200] if last_error else "Unknown error"
+    print(f"[adk_planner] All models exhausted. Last error: {error_summary}")
+    return {
+        "need_more_research": False,
+        "reasoning": (
+            "ADK Research Planner could not run (API quota exhausted across all model tiers). "
+            "Debate will proceed with current evidence coverage."
+        ),
+        "query_used": None,
+    }
 
 
 if __name__ == "__main__":
